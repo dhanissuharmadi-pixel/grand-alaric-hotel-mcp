@@ -1,0 +1,13 @@
+[project]
+name = "hotel-mcp-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.27.2",
+    "openai>=1.0.0",
+    "playwright>=1.60.0",
+]
