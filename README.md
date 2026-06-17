@@ -25,13 +25,13 @@ cd grand-alaric-hotel-mcp
 uv sync
 ```
 
-Set the API key to enable live mode (sent as the `phm-chat-api-key` header):
+Set the API key (sent as the `phm-chat-api-key` header) — in your shell or a local `.env`:
 
 ```bash
 export GRAND_ALARIC_API_KEY=your_api_key
 ```
 
-`API_BASE_URL` defaults to the live PHM endpoint; override it (and `BOOKING_BASE_URL`) only to point at a different backend. With no key set, the server serves built-in mock data.
+`API_BASE_URL` defaults to the live PHM endpoint; override it only to point at a different backend.
 
 ## Usage
 
