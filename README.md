@@ -101,4 +101,4 @@ The endpoint is unauthenticated — front it with your host's gateway/token if e
 
 ## Status
 
-Set `GRAND_ALARIC_API_KEY` to call the live backend; with no key the server returns built-in mock data. Point at another site by setting `API_BASE_URL`, `BOOKING_BASE_URL`, and the key — no code change.
+Calls the live PHM API. Set `GRAND_ALARIC_API_KEY` (sent as `phm-chat-api-key`); override `API_BASE_URL` to point at a different backend.
