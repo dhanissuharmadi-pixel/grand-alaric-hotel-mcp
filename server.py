@@ -88,7 +88,7 @@ def _err(msg: str) -> str:
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
-    # ponytail: passthrough — returns the backend's JSON verbatim.
+    # note: passthrough — returns the backend's JSON verbatim.
     try:
         async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=20) as client:
             r = await client.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
@@ -148,9 +148,9 @@ async def search_hotels(location: str) -> str:
     logger.info("search_hotels location=%r live=%s", location, _LIVE)
 
     if _LIVE:
-        return await _api("GET", "/hotels")  # API lists all properties; the model picks by location
+        return await _api("GET", "/hotels")  # API lists all properties; then picks by location
 
-    # Mock: gate to the demo's only region so off-topic queries return cleanly.
+    # Mock: gate to the demo's only region so off-topic queries return clean.
     loc = location.strip().lower()
     keywords = ["bandung", "indonesia", "dago", "tubagus", "alaric", "hotel", "stay", "room"]
     if not any(kw in loc for kw in keywords):
@@ -331,7 +331,7 @@ async def create_order(
     logger.info("create_order hotel=%s room=%s package=%s guest=%r live=%s", hotel_id, room_id, package_id, guest_name, _LIVE)
 
     if _LIVE:
-        # ponytail: passthrough — the payment/confirmation link is in this response; exact field unverified.
+        # note: passthrough — the payment/confirmation link is in this response; exact field unverified.
         return await _api("POST", "/orders", order)
 
     # Mock: no real booking; echo a stub confirmation for the offline demo.
@@ -343,7 +343,6 @@ if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     mcp.settings.host = os.getenv("HOST", "127.0.0.1")  # set 0.0.0.0 when hosting
     mcp.settings.port = int(os.getenv("PORT", "8000"))  # host/port only used by sse/http transports
-    # ponytail: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
+    # nite: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
     logger.info("Starting Grand Alaric MCP — transport=%s host=%s port=%d live=%s", transport, mcp.settings.host, mcp.settings.port, _LIVE)
     mcp.run(transport=transport)
-
