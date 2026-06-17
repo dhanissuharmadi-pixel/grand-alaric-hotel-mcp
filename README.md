@@ -1,6 +1,6 @@
 # Grand Alaric Hotel MCP Server
 
-An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia. Supports both Claude (via FastMCP) and OpenAI function calling from the same tool logic.
+An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
 
 ## Tools
 
@@ -58,30 +58,6 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### OpenAI
-
-```bash
-export OPENAI_API_KEY=your_openai_key
-.venv/bin/python openai_agent.py
-```
-
-Or embed in your own app:
-
-```python
-from openai_agent import ask
-
-reply, history = await ask("I want a room in Bandung", history=[])
-reply, history = await ask("2 nights, check in July 1", history=history)
-```
-
-## Project Structure
-
-```
-server.py         — FastMCP server (Claude / MCP)
-openai_agent.py   — OpenAI function calling agent
-pyproject.toml    — Dependencies
-```
-
 ## Status
 
-All tools run on mock data. To connect to the real API, replace the `# TODO: replace with real API call` blocks in `server.py` with live `httpx` requests. Both `server.py` and `openai_agent.py` will pick up the change automatically.
+All tools run on mock data. To connect to the real API, replace the `# TODO: replace with real API call` blocks in `server.py` with live `httpx` requests.

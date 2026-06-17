@@ -1,11 +1,10 @@
 from mcp.server.fastmcp import FastMCP
-from typing import Optional
 import httpx
 import json
 import logging
 import os
-import uuid
 from datetime import date, datetime
+from urllib.parse import urlencode
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,9 +63,6 @@ _MOCK_ROOM_TYPES: dict[str, list[dict]] = {
     ],
 }
 
-# In-memory booking store — replace with DB/API persistence in production
-_SESSION_BOOKINGS: dict[str, dict] = {}
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -95,10 +91,8 @@ mcp = FastMCP(
         "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
         "Use search_hotels to find properties by location. "
         "Use check_availability to see room types and rates for specific dates. "
-        "Use create_booking ONLY after the user explicitly confirms all details. "
-        "Use get_booking to look up an existing reservation by reference number. "
-        "Use cancel_booking to cancel a reservation. "
-        "Always confirm full booking details with the user before calling create_booking."
+        "Once the user picks a room and confirms the dates, use get_checkout_link "
+        "to give them a checkout URL — they complete payment and confirmation there."
     ),
 )
 
@@ -203,28 +197,23 @@ async def check_availability(
 
 
 @mcp.tool()
-async def create_booking(
+async def get_checkout_link(
     hotel_id: str,
     room_type_id: str,
-    guest_name: str,
-    guest_email: str,
     check_in_date: str,
     check_out_date: str,
     guests: int = 2,
-    special_requests: Optional[str] = None,
 ) -> str:
     """
-    Submit a room reservation. Call only after the user has confirmed all details.
+    Build a checkout URL for the chosen room. Send the user here to enter their
+    details and pay — booking, confirmation, and cancellation happen on that page.
 
     Args:
         hotel_id: Property ID (e.g. 'GAH-BDG-001').
         room_type_id: Room type ID from check_availability (e.g. 'std', 'dlx').
-        guest_name: Full legal name of the primary guest.
-        guest_email: Guest contact email for the confirmation.
         check_in_date: Check-in date in YYYY-MM-DD format.
         check_out_date: Check-out date in YYYY-MM-DD format.
         guests: Number of guests.
-        special_requests: Optional dietary, accessibility, or bed preference notes.
     """
     try:
         check_in = _validate_date(check_in_date, "check_in_date")
@@ -234,6 +223,8 @@ async def create_booking(
 
     if check_out <= check_in:
         return _err("check_out_date must be after check_in_date.")
+    if check_in < date.today():
+        return _err("check_in_date cannot be in the past.")
 
     prop = _get_property(hotel_id)
     if not prop:
@@ -246,125 +237,25 @@ async def create_booking(
         return _err(f"'{room['name']}' is not available for the selected dates.")
 
     nights = (check_out - check_in).days
-    total_idr = room["rate_per_night_idr"] * nights
-
-    # TODO: replace with real booking API call
-    # payload = {
-    #     "hotel_id": hotel_id, "room_type_id": room_type_id,
-    #     "guest_name": guest_name, "guest_email": guest_email,
-    #     "check_in": check_in_date, "check_out": check_out_date,
-    #     "guests": guests, "special_requests": special_requests,
-    # }
-    # async with httpx.AsyncClient() as client:
-    #     r = await client.post(
-    #         f"{API_BASE_URL}/bookings",
-    #         headers={"Authorization": f"Bearer {API_KEY}"},
-    #         json=payload,
-    #         timeout=15,
-    #     )
-    #     r.raise_for_status()
-    #     return r.text
-
-    ref = f"GA-{uuid.uuid4().hex[:6].upper()}"
-    booking = {
-        "reference": ref,
-        "status": "confirmed",
-        "hotel": prop["name"],
-        "address": prop["address"],
-        "room": room["name"],
-        "beds": room["beds"],
-        "guest_name": guest_name,
-        "guest_email": guest_email,
+    params = urlencode({
+        "hotel": hotel_id,
+        "room": room_type_id,
         "check_in": check_in_date,
         "check_out": check_out_date,
-        "check_in_time": prop["check_in_time"],
-        "check_out_time": prop["check_out_time"],
+        "guests": guests,
+    })
+    checkout_url = f"{BOOKING_BASE_URL}/checkout?{params}"
+    logger.info("get_checkout_link hotel=%s room=%s -> %s", hotel_id, room_type_id, checkout_url)
+
+    return json.dumps({
+        "checkout_url": checkout_url,
+        "hotel": prop["name"],
+        "room": room["name"],
         "nights": nights,
         "guests": guests,
         "rate_per_night_idr": room["rate_per_night_idr"],
-        "total_idr": total_idr,
+        "total_idr": room["rate_per_night_idr"] * nights,
         "currency": "IDR",
-        "special_requests": special_requests,
-        "contact_email": prop["contact_email"],
-        "contact_phone": prop["contact_phone"],
-        "payment_url": f"{BOOKING_BASE_URL}/pay/{ref}",  # TODO: real payment gateway link
-    }
-
-    _SESSION_BOOKINGS[ref] = booking
-    logger.info("create_booking ref=%s hotel=%s guest=%r", ref, hotel_id, guest_name)
-
-    return json.dumps({"success": True, "booking": booking}, indent=2)
-
-
-@mcp.tool()
-async def get_booking(booking_reference: str) -> str:
-    """
-    Retrieve details for an existing reservation.
-
-    Args:
-        booking_reference: The reference number from create_booking (e.g. 'GA-A1B2C3').
-    """
-    ref = booking_reference.strip().upper()
-    logger.info("get_booking ref=%s", ref)
-
-    # TODO: replace with real API call
-    # async with httpx.AsyncClient() as client:
-    #     r = await client.get(
-    #         f"{API_BASE_URL}/bookings/{ref}",
-    #         headers={"Authorization": f"Bearer {API_KEY}"},
-    #         timeout=10,
-    #     )
-    #     if r.status_code == 404:
-    #         return _err(f"Booking '{ref}' not found.")
-    #     r.raise_for_status()
-    #     return r.text
-
-    booking = _SESSION_BOOKINGS.get(ref)
-    if not booking:
-        return _err(f"Booking '{ref}' not found. (Mock mode: only bookings from this session are available.)")
-
-    return json.dumps({"booking": booking}, indent=2)
-
-
-@mcp.tool()
-async def cancel_booking(booking_reference: str, reason: Optional[str] = None) -> str:
-    """
-    Cancel an existing reservation.
-
-    Args:
-        booking_reference: The reference number to cancel (e.g. 'GA-A1B2C3').
-        reason: Optional cancellation reason.
-    """
-    ref = booking_reference.strip().upper()
-    logger.info("cancel_booking ref=%s reason=%r", ref, reason)
-
-    # TODO: replace with real API call
-    # async with httpx.AsyncClient() as client:
-    #     r = await client.post(
-    #         f"{API_BASE_URL}/bookings/{ref}/cancel",
-    #         headers={"Authorization": f"Bearer {API_KEY}"},
-    #         json={"reason": reason},
-    #         timeout=10,
-    #     )
-    #     if r.status_code == 404:
-    #         return _err(f"Booking '{ref}' not found.")
-    #     r.raise_for_status()
-    #     return r.text
-
-    booking = _SESSION_BOOKINGS.get(ref)
-    if not booking:
-        return _err(f"Booking '{ref}' not found.")
-    if booking.get("status") == "cancelled":
-        return _err(f"Booking '{ref}' is already cancelled.")
-
-    _SESSION_BOOKINGS[ref]["status"] = "cancelled"
-    _SESSION_BOOKINGS[ref]["cancellation_reason"] = reason
-
-    return json.dumps({
-        "success": True,
-        "reference": ref,
-        "status": "cancelled",
-        "message": "Reservation cancelled. A confirmation will be sent to the registered email.",
     }, indent=2)
 
 
