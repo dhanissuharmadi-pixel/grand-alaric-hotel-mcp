@@ -9,5 +9,6 @@ wheels/
 .DS_Store
 .env
 
-# Postman Git-sync writes collections here; keep them out of the repo
+# Postman Git-sync output; keep it (and any keys it may store) out of the repo
 postman/collections/
+postman/environments/
