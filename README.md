@@ -58,6 +58,16 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
+### OpenAI / ChatGPT
+
+`openai_agent.py` runs the tools through the OpenAI Agents SDK, which speaks MCP
+natively — it spawns `server.py` and auto-discovers the tools, no schema copy.
+
+```bash
+export OPENAI_API_KEY=sk-...
+.venv/bin/python openai_agent.py
+```
+
 ## Status
 
-All tools run on mock data. To connect to the real API, replace the `# TODO: replace with real API call` blocks in `server.py` with live `httpx` requests.
+Set `GRAND_ALARIC_API_KEY` to call the live backend; with no key the server returns built-in mock data. Point at another site by setting `API_BASE_URL`, `BOOKING_BASE_URL`, and the key — no code change.

@@ -268,7 +268,7 @@ async def get_checkout_link(
 
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
-    port = int(os.getenv("PORT", "8000"))
-    logger.info("Starting Grand Alaric MCP — transport=%s port=%d", transport, port)
+    mcp.settings.port = int(os.getenv("PORT", "8000"))  # only used by sse/http transports
+    logger.info("Starting Grand Alaric MCP — transport=%s port=%d live=%s", transport, mcp.settings.port, _LIVE)
     mcp.run(transport=transport)
 
