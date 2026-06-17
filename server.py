@@ -98,6 +98,23 @@ async def _api(method: str, path: str, json_body: dict | None = None) -> str:
         return _err(f"Upstream API error: {exc}")
 
 
+def _stay_dates(check_in_date: str, check_out_date: str) -> tuple[date, date]:
+    """Validate a DD-MM-YYYY stay range. Raises ValueError on bad input."""
+    check_in = _validate_date(check_in_date, "check_in_date")
+    check_out = _validate_date(check_out_date, "check_out_date")
+    if check_out <= check_in:
+        raise ValueError("check_out_date must be after check_in_date.")
+    if check_in < date.today():
+        raise ValueError("check_in_date cannot be in the past.")
+    return check_in, check_out
+
+
+def _stay_body(hotel_id: str, check_in: date, check_out: date, guests: int, **extra) -> dict:
+    """Request body shared by /rooms, /package, /room-packages (and /orders)."""
+    return {"hotel_id": hotel_id, "checkin": check_in.isoformat(), "checkout": check_out.isoformat(),
+            "adult": guests, "child": 0, "promocode": "", **extra}
+
+
 # ---------------------------------------------------------------------------
 # MCP server
 # ---------------------------------------------------------------------------
@@ -107,9 +124,11 @@ mcp = FastMCP(
         "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
         "Use search_hotels to find properties by location. "
         "Use check_availability to see room types and rates for specific dates. "
-        "Once the user picks a room and provides guest details (name, email, phone, "
-        "nationality), use create_order to place the booking, then give them the "
-        "payment link from the response to complete payment."
+        "For bundle deals, use check_packages then check_room_packages. "
+        "Use list_nationalities to resolve the guest's nationality code. "
+        "Once the user picks a room or package and provides guest details (name, "
+        "email, phone, nationality), use create_order to place the booking, then "
+        "give them the payment link from the response to complete payment."
     ),
 )
 
@@ -160,28 +179,15 @@ async def check_availability(
         guests: Number of guests (default 2).
     """
     try:
-        check_in = _validate_date(check_in_date, "check_in_date")
-        check_out = _validate_date(check_out_date, "check_out_date")
+        check_in, check_out = _stay_dates(check_in_date, check_out_date)
     except ValueError as exc:
         return _err(str(exc))
-
-    if check_out <= check_in:
-        return _err("check_out_date must be after check_in_date.")
-    if check_in < date.today():
-        return _err("check_in_date cannot be in the past.")
 
     nights = (check_out - check_in).days
     logger.info("check_availability hotel=%s %s→%s (%d nights, %d guests) live=%s", hotel_id, check_in_date, check_out_date, nights, guests, _LIVE)
 
     if _LIVE:
-        return await _api("POST", "/rooms", {
-            "hotel_id": hotel_id,
-            "checkin": check_in.isoformat(),   # API wants ISO; tool input is DD-MM-YYYY
-            "checkout": check_out.isoformat(),
-            "adult": guests,
-            "child": 0,
-            "promocode": "",
-        })
+        return await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
 
     prop = _get_property(hotel_id)
     if not prop:
@@ -205,65 +211,124 @@ async def check_availability(
 
 
 @mcp.tool()
+async def check_packages(
+    hotel_id: str,
+    check_in_date: str,
+    check_out_date: str,
+    guests: int = 2,
+) -> str:
+    """
+    List bookable packages (e.g. promo bundles) for a hotel and date range.
+
+    Args:
+        hotel_id: Property ID from search_hotels (e.g. 'GSV').
+        check_in_date: Check-in date in DD-MM-YYYY format.
+        check_out_date: Check-out date in DD-MM-YYYY format.
+        guests: Number of guests.
+    """
+    try:
+        check_in, check_out = _stay_dates(check_in_date, check_out_date)
+    except ValueError as exc:
+        return _err(str(exc))
+
+    logger.info("check_packages hotel=%s %s→%s live=%s", hotel_id, check_in_date, check_out_date, _LIVE)
+    if _LIVE:
+        return await _api("POST", "/package", _stay_body(hotel_id, check_in, check_out, guests))
+    return _err("Packages require a live API key (no mock data).")
+
+
+@mcp.tool()
+async def check_room_packages(
+    hotel_id: str,
+    check_in_date: str,
+    check_out_date: str,
+    package_code: str,
+    guests: int = 2,
+) -> str:
+    """
+    List the rooms and prices available within a specific package.
+
+    Args:
+        hotel_id: Property ID from search_hotels (e.g. 'GSV').
+        check_in_date: Check-in date in DD-MM-YYYY format.
+        check_out_date: Check-out date in DD-MM-YYYY format.
+        package_code: Package code from check_packages (e.g. 'GNW').
+        guests: Number of guests.
+    """
+    try:
+        check_in, check_out = _stay_dates(check_in_date, check_out_date)
+    except ValueError as exc:
+        return _err(str(exc))
+
+    logger.info("check_room_packages hotel=%s package=%s live=%s", hotel_id, package_code, _LIVE)
+    if _LIVE:
+        return await _api("POST", "/room-packages",
+                          _stay_body(hotel_id, check_in, check_out, guests, package_code=package_code))
+    return _err("Packages require a live API key (no mock data).")
+
+
+@mcp.tool()
+async def list_nationalities() -> str:
+    """List valid nationality codes and phone codes for use in create_order."""
+    logger.info("list_nationalities live=%s", _LIVE)
+    if _LIVE:
+        return await _api("GET", "/nationality")
+    return json.dumps({"success": True, "hotels": [
+        {"nation_code": "id", "nation_name": "Indonesian", "country_name": "Indonesia", "phone_code": "+62"},
+    ]}, indent=2)
+
+
+@mcp.tool()
 async def create_order(
     hotel_id: str,
-    room_id: str,
     check_in_date: str,
     check_out_date: str,
     guest_name: str,
     guest_email: str,
     guest_phone: str,
+    room_id: str = "",
+    package_code: str = "",
+    package_id: str = "",
     nation_code: str = "id",
     salutation: int = 3,
     guests: int = 2,
     promocode: str = "",
 ) -> str:
     """
-    Place a room reservation. Call ONLY after the user has confirmed the room and
-    all guest details. Returns the order result, including a payment link to send
-    the guest to.
+    Place a reservation. Call ONLY after the user has confirmed the room/package and
+    all guest details. Pass EITHER room_id (a plain room, from check_availability) OR
+    package_id + package_code (a package, from check_room_packages). Returns the order
+    result, including a payment link to send the guest to.
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
-        room_id: Room ID from check_availability (e.g. 'SUPK-IWS312ROO').
         check_in_date: Check-in date in DD-MM-YYYY format.
         check_out_date: Check-out date in DD-MM-YYYY format.
         guest_name: Full name of the primary guest.
         guest_email: Guest email for the booking confirmation.
         guest_phone: Guest phone number (e.g. '+6282214171060').
-        nation_code: Guest nationality code (e.g. 'id', 'ae').
+        room_id: Room ID from check_availability (e.g. 'SUPK-IWS312ROO'). For a plain room.
+        package_code: Package code from check_packages (e.g. 'GNW'). For a package booking.
+        package_id: Package room ID from check_room_packages (e.g. 'DLXK-GNW335').
+        nation_code: Guest nationality code from list_nationalities (e.g. 'id', 'ae').
         salutation: Salutation code as defined by the API (e.g. 3).
         guests: Number of adult guests.
         promocode: Optional promo code.
     """
     try:
-        check_in = _validate_date(check_in_date, "check_in_date")
-        check_out = _validate_date(check_out_date, "check_out_date")
+        check_in, check_out = _stay_dates(check_in_date, check_out_date)
     except ValueError as exc:
         return _err(str(exc))
 
-    if check_out <= check_in:
-        return _err("check_out_date must be after check_in_date.")
-    if check_in < date.today():
-        return _err("check_in_date cannot be in the past.")
+    if not room_id and not package_id:
+        return _err("Provide either room_id (from check_availability) or package_id (from check_room_packages).")
 
-    order = {
-        "hotel_id": hotel_id,
-        "checkin": check_in.isoformat(),   # API wants ISO; tool input is DD-MM-YYYY
-        "checkout": check_out.isoformat(),
-        "adult": guests,
-        "child": 0,
-        "promocode": promocode,
-        "room_id": room_id,
-        "guest": {
-            "salutation": salutation,
-            "nation_code": nation_code,
-            "name": guest_name,
-            "phone": guest_phone,
-            "email": guest_email,
-        },
-    }
-    logger.info("create_order hotel=%s room=%s guest=%r live=%s", hotel_id, room_id, guest_name, _LIVE)
+    selection = {"package_code": package_code, "package_id": package_id} if package_id else {"room_id": room_id}
+    order = _stay_body(hotel_id, check_in, check_out, guests, **selection,
+                       guest={"salutation": salutation, "nation_code": nation_code,
+                              "name": guest_name, "phone": guest_phone, "email": guest_email})
+    order["promocode"] = promocode
+    logger.info("create_order hotel=%s room=%s package=%s guest=%r live=%s", hotel_id, room_id, package_id, guest_name, _LIVE)
 
     if _LIVE:
         # ponytail: passthrough — the payment/confirmation link is in this response; exact field unverified.

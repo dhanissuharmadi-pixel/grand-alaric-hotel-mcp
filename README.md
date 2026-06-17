@@ -8,7 +8,10 @@ An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
 |---|---|
 | `search_hotels` | List Grand Alaric properties |
 | `check_availability` | Get available rooms and prices for a hotel and date range |
-| `create_order` | Place a booking and return a payment link |
+| `check_packages` | List bookable packages (promo bundles) for a hotel and dates |
+| `check_room_packages` | List rooms and prices within a specific package |
+| `list_nationalities` | Valid nationality/phone codes for `create_order` |
+| `create_order` | Place a room or package booking; returns a payment link |
 
 Dates are entered as `DD-MM-YYYY`.
 
