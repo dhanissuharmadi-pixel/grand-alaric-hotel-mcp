@@ -17,10 +17,15 @@ logger = logging.getLogger("grand-alaric-mcp")
 # ---------------------------------------------------------------------------
 BOOKING_BASE_URL = os.getenv("BOOKING_BASE_URL", "https://booking.grandalaric.com/en")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.grandalaric.com/v1")  # TODO: confirm with backend
-API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")                             # TODO: set in prod env
+API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")
+
+# Live backend is used automatically when an API key is present; otherwise the
+# mock data below is served. To point at another site: set API_BASE_URL,
+# BOOKING_BASE_URL and the key env var — no code change.
+_LIVE = bool(API_KEY)
 
 # ---------------------------------------------------------------------------
-# Mock data — swap these out once the real API is ready
+# Mock data — only served when no API key is set
 # ---------------------------------------------------------------------------
 _MOCK_PROPERTIES = [
     {
@@ -82,6 +87,18 @@ def _err(msg: str) -> str:
     return json.dumps({"error": msg}, indent=2)
 
 
+async def _api_get(path: str, params: dict) -> str:
+    # ponytail: passthrough — returns the backend's JSON verbatim. Add field
+    # mapping here only if a tool's shape must differ from the backend's.
+    try:
+        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=10) as client:
+            r = await client.get(path, params=params, headers={"Authorization": f"Bearer {API_KEY}"})
+            r.raise_for_status()
+            return r.text
+    except httpx.HTTPError as exc:
+        return _err(f"Upstream API error: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # MCP server
 # ---------------------------------------------------------------------------
@@ -109,27 +126,19 @@ async def search_hotels(location: str) -> str:
     Args:
         location: City, area, or keyword (e.g. 'Bandung', 'Dago', 'Indonesia').
     """
+    logger.info("search_hotels location=%r live=%s", location, _LIVE)
+
+    if _LIVE:
+        return await _api_get("/properties", {"location": location})  # ponytail: path assumed; confirm when contract lands
+
+    # Mock: gate to the demo's only region so off-topic queries return cleanly.
     loc = location.strip().lower()
     keywords = ["bandung", "indonesia", "dago", "tubagus", "alaric", "hotel", "stay", "room"]
-
     if not any(kw in loc for kw in keywords):
         return json.dumps({
             "found": False,
             "message": f"Grand Alaric operates in Bandung, Indonesia. No properties match '{location}'.",
         }, indent=2)
-
-    logger.info("search_hotels location=%r", location)
-
-    # TODO: replace with real API call
-    # async with httpx.AsyncClient() as client:
-    #     r = await client.get(
-    #         f"{API_BASE_URL}/properties",
-    #         headers={"Authorization": f"Bearer {API_KEY}"},
-    #         params={"location": location},
-    #         timeout=10,
-    #     )
-    #     r.raise_for_status()
-    #     return r.text
 
     return json.dumps({"found": True, "properties": _MOCK_PROPERTIES}, indent=2)
 
@@ -161,23 +170,18 @@ async def check_availability(
     if check_in < date.today():
         return _err("check_in_date cannot be in the past.")
 
+    nights = (check_out - check_in).days
+    logger.info("check_availability hotel=%s %s→%s (%d nights, %d guests) live=%s", hotel_id, check_in_date, check_out_date, nights, guests, _LIVE)
+
+    if _LIVE:
+        return await _api_get(  # ponytail: path assumed; confirm when contract lands
+            f"/properties/{hotel_id}/availability",
+            {"check_in": check_in_date, "check_out": check_out_date, "guests": guests},
+        )
+
     prop = _get_property(hotel_id)
     if not prop:
         return _err(f"No property found with id '{hotel_id}'.")
-
-    nights = (check_out - check_in).days
-    logger.info("check_availability hotel=%s %s→%s (%d nights, %d guests)", hotel_id, check_in_date, check_out_date, nights, guests)
-
-    # TODO: replace with real availability API call
-    # async with httpx.AsyncClient() as client:
-    #     r = await client.get(
-    #         f"{API_BASE_URL}/properties/{hotel_id}/availability",
-    #         headers={"Authorization": f"Bearer {API_KEY}"},
-    #         params={"check_in": check_in_date, "check_out": check_out_date, "guests": guests},
-    #         timeout=10,
-    #     )
-    #     r.raise_for_status()
-    #     return r.text
 
     available_rooms = [
         {**room, "total_idr": room["rate_per_night_idr"] * nights}
@@ -226,16 +230,6 @@ async def get_checkout_link(
     if check_in < date.today():
         return _err("check_in_date cannot be in the past.")
 
-    prop = _get_property(hotel_id)
-    if not prop:
-        return _err(f"No property found with id '{hotel_id}'.")
-
-    room = next((r for r in _MOCK_ROOM_TYPES.get(hotel_id, []) if r["id"] == room_type_id), None)
-    if not room:
-        return _err(f"Room type '{room_type_id}' not found at {prop['name']}.")
-    if not room["available"]:
-        return _err(f"'{room['name']}' is not available for the selected dates.")
-
     nights = (check_out - check_in).days
     params = urlencode({
         "hotel": hotel_id,
@@ -246,6 +240,19 @@ async def get_checkout_link(
     })
     checkout_url = f"{BOOKING_BASE_URL}/checkout?{params}"
     logger.info("get_checkout_link hotel=%s room=%s -> %s", hotel_id, room_type_id, checkout_url)
+
+    # Live: the checkout page validates the room and prices it; just hand over the link.
+    if _LIVE:
+        return json.dumps({"checkout_url": checkout_url}, indent=2)
+
+    prop = _get_property(hotel_id)
+    if not prop:
+        return _err(f"No property found with id '{hotel_id}'.")
+    room = next((r for r in _MOCK_ROOM_TYPES.get(hotel_id, []) if r["id"] == room_type_id), None)
+    if not room:
+        return _err(f"Room type '{room_type_id}' not found at {prop['name']}.")
+    if not room["available"]:
+        return _err(f"'{room['name']}' is not available for the selected dates.")
 
     return json.dumps({
         "checkout_url": checkout_url,
