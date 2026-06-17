@@ -71,6 +71,17 @@ export OPENAI_API_KEY=sk-...
 .venv/bin/python openai_agent.py
 ```
 
+### Web chat UI
+
+`app.py` is a browser chat UI (Gradio) over the same agent. Opens at
+`http://localhost:7860`.
+
+```bash
+export OPENAI_API_KEY=sk-...
+.venv/bin/python app.py                                   # spawns server.py locally
+MCP_URL=https://<app>.onrender.com/sse?token=... .venv/bin/python app.py   # hosted server
+```
+
 ### Remote / hosted
 
 Serve over HTTP instead of stdio so remote clients can reach it:
