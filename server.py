@@ -1,9 +1,12 @@
 from mcp.server.fastmcp import FastMCP
+from dotenv import load_dotenv
 import httpx
 import json
 import logging
 import os
 from datetime import date, datetime
+
+load_dotenv()  # read GRAND_ALARIC_API_KEY etc. from a local .env if present
 
 logging.basicConfig(
     level=logging.INFO,
