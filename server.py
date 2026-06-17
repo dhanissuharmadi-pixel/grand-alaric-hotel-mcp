@@ -74,9 +74,9 @@ _MOCK_ROOM_TYPES: dict[str, list[dict]] = {
 
 def _validate_date(value: str, field: str) -> date:
     try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.strptime(value, "%d-%m-%Y").date()
     except ValueError:
-        raise ValueError(f"'{field}' must be YYYY-MM-DD, got: '{value}'")
+        raise ValueError(f"'{field}' must be DD-MM-YYYY, got: '{value}'")
 
 
 def _get_property(hotel_id: str) -> dict | None:
@@ -155,8 +155,8 @@ async def check_availability(
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GAH-BDG-001').
-        check_in_date: Check-in date in YYYY-MM-DD format.
-        check_out_date: Check-out date in YYYY-MM-DD format.
+        check_in_date: Check-in date in DD-MM-YYYY format.
+        check_out_date: Check-out date in DD-MM-YYYY format.
         guests: Number of guests (default 2).
     """
     try:
@@ -215,8 +215,8 @@ async def get_checkout_link(
     Args:
         hotel_id: Property ID (e.g. 'GAH-BDG-001').
         room_type_id: Room type ID from check_availability (e.g. 'std', 'dlx').
-        check_in_date: Check-in date in YYYY-MM-DD format.
-        check_out_date: Check-out date in YYYY-MM-DD format.
+        check_in_date: Check-in date in DD-MM-YYYY format.
+        check_out_date: Check-out date in DD-MM-YYYY format.
         guests: Number of guests.
     """
     try:
