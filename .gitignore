@@ -7,3 +7,6 @@ wheels/
 
 .venv
 .DS_Store
+
+# Postman Git-sync writes collections here; keep them out of the repo
+postman/collections/
