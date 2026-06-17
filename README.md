@@ -6,11 +6,11 @@ An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
 
 | Tool | Description |
 |---|---|
-| `search_hotels` | Find properties by location |
-| `check_availability` | Get available rooms and rates for a date range |
-| `create_booking` | Submit a reservation |
-| `get_booking` | Retrieve a booking by reference number |
-| `cancel_booking` | Cancel an existing reservation |
+| `search_hotels` | List Grand Alaric properties |
+| `check_availability` | Get available rooms and prices for a hotel and date range |
+| `create_order` | Place a booking and return a payment link |
+
+Dates are entered as `DD-MM-YYYY`.
 
 ## Setup
 
@@ -22,13 +22,13 @@ cd grand-alaric-hotel-mcp
 uv sync
 ```
 
-Set environment variables:
+Set the API key to enable live mode (sent as the `phm-chat-api-key` header):
 
 ```bash
 export GRAND_ALARIC_API_KEY=your_api_key
-export API_BASE_URL=https://api.grandalaric.com/v1
-export BOOKING_BASE_URL=https://booking.grandalaric.com/en
 ```
+
+`API_BASE_URL` defaults to the live PHM endpoint; override it (and `BOOKING_BASE_URL`) only to point at a different backend. With no key set, the server serves built-in mock data.
 
 ## Usage
 

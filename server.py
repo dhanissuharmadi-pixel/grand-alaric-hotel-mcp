@@ -4,7 +4,6 @@ import json
 import logging
 import os
 from datetime import date, datetime
-from urllib.parse import urlencode
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,8 +15,9 @@ logger = logging.getLogger("grand-alaric-mcp")
 # Config — set these in your environment before going live
 # ---------------------------------------------------------------------------
 BOOKING_BASE_URL = os.getenv("BOOKING_BASE_URL", "https://booking.grandalaric.com/en")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.grandalaric.com/v1")  # TODO: confirm with backend
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api6.alarichotels.com/webapi/chatgpt")
 API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")
+API_KEY_HEADER = "phm-chat-api-key"
 
 # Live backend is used automatically when an API key is present; otherwise the
 # mock data below is served. To point at another site: set API_BASE_URL,
@@ -87,12 +87,11 @@ def _err(msg: str) -> str:
     return json.dumps({"error": msg}, indent=2)
 
 
-async def _api_get(path: str, params: dict) -> str:
-    # ponytail: passthrough — returns the backend's JSON verbatim. Add field
-    # mapping here only if a tool's shape must differ from the backend's.
+async def _api(method: str, path: str, json_body: dict | None = None) -> str:
+    # ponytail: passthrough — returns the backend's JSON verbatim.
     try:
-        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=10) as client:
-            r = await client.get(path, params=params, headers={"Authorization": f"Bearer {API_KEY}"})
+        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=20) as client:
+            r = await client.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
             r.raise_for_status()
             return r.text
     except httpx.HTTPError as exc:
@@ -108,8 +107,9 @@ mcp = FastMCP(
         "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
         "Use search_hotels to find properties by location. "
         "Use check_availability to see room types and rates for specific dates. "
-        "Once the user picks a room and confirms the dates, use get_checkout_link "
-        "to give them a checkout URL — they complete payment and confirmation there."
+        "Once the user picks a room and provides guest details (name, email, phone, "
+        "nationality), use create_order to place the booking, then give them the "
+        "payment link from the response to complete payment."
     ),
 )
 
@@ -129,7 +129,7 @@ async def search_hotels(location: str) -> str:
     logger.info("search_hotels location=%r live=%s", location, _LIVE)
 
     if _LIVE:
-        return await _api_get("/properties", {"location": location})  # ponytail: path assumed; confirm when contract lands
+        return await _api("GET", "/hotels")  # API lists all properties; the model picks by location
 
     # Mock: gate to the demo's only region so off-topic queries return cleanly.
     loc = location.strip().lower()
@@ -174,10 +174,14 @@ async def check_availability(
     logger.info("check_availability hotel=%s %s→%s (%d nights, %d guests) live=%s", hotel_id, check_in_date, check_out_date, nights, guests, _LIVE)
 
     if _LIVE:
-        return await _api_get(  # ponytail: path assumed; confirm when contract lands
-            f"/properties/{hotel_id}/availability",
-            {"check_in": check_in_date, "check_out": check_out_date, "guests": guests},
-        )
+        return await _api("POST", "/rooms", {
+            "hotel_id": hotel_id,
+            "checkin": check_in.isoformat(),   # API wants ISO; tool input is DD-MM-YYYY
+            "checkout": check_out.isoformat(),
+            "adult": guests,
+            "child": 0,
+            "promocode": "",
+        })
 
     prop = _get_property(hotel_id)
     if not prop:
@@ -201,23 +205,36 @@ async def check_availability(
 
 
 @mcp.tool()
-async def get_checkout_link(
+async def create_order(
     hotel_id: str,
-    room_type_id: str,
+    room_id: str,
     check_in_date: str,
     check_out_date: str,
+    guest_name: str,
+    guest_email: str,
+    guest_phone: str,
+    nation_code: str = "id",
+    salutation: int = 3,
     guests: int = 2,
+    promocode: str = "",
 ) -> str:
     """
-    Build a checkout URL for the chosen room. Send the user here to enter their
-    details and pay — booking, confirmation, and cancellation happen on that page.
+    Place a room reservation. Call ONLY after the user has confirmed the room and
+    all guest details. Returns the order result, including a payment link to send
+    the guest to.
 
     Args:
-        hotel_id: Property ID (e.g. 'GAH-BDG-001').
-        room_type_id: Room type ID from check_availability (e.g. 'std', 'dlx').
+        hotel_id: Property ID from search_hotels (e.g. 'GSV').
+        room_id: Room ID from check_availability (e.g. 'SUPK-IWS312ROO').
         check_in_date: Check-in date in DD-MM-YYYY format.
         check_out_date: Check-out date in DD-MM-YYYY format.
-        guests: Number of guests.
+        guest_name: Full name of the primary guest.
+        guest_email: Guest email for the booking confirmation.
+        guest_phone: Guest phone number (e.g. '+6282214171060').
+        nation_code: Guest nationality code (e.g. 'id', 'ae').
+        salutation: Salutation code as defined by the API (e.g. 3).
+        guests: Number of adult guests.
+        promocode: Optional promo code.
     """
     try:
         check_in = _validate_date(check_in_date, "check_in_date")
@@ -230,40 +247,31 @@ async def get_checkout_link(
     if check_in < date.today():
         return _err("check_in_date cannot be in the past.")
 
-    nights = (check_out - check_in).days
-    params = urlencode({
-        "hotel": hotel_id,
-        "room": room_type_id,
-        "check_in": check_in_date,
-        "check_out": check_out_date,
-        "guests": guests,
-    })
-    checkout_url = f"{BOOKING_BASE_URL}/checkout?{params}"
-    logger.info("get_checkout_link hotel=%s room=%s -> %s", hotel_id, room_type_id, checkout_url)
+    order = {
+        "hotel_id": hotel_id,
+        "checkin": check_in.isoformat(),   # API wants ISO; tool input is DD-MM-YYYY
+        "checkout": check_out.isoformat(),
+        "adult": guests,
+        "child": 0,
+        "promocode": promocode,
+        "room_id": room_id,
+        "guest": {
+            "salutation": salutation,
+            "nation_code": nation_code,
+            "name": guest_name,
+            "phone": guest_phone,
+            "email": guest_email,
+        },
+    }
+    logger.info("create_order hotel=%s room=%s guest=%r live=%s", hotel_id, room_id, guest_name, _LIVE)
 
-    # Live: the checkout page validates the room and prices it; just hand over the link.
     if _LIVE:
-        return json.dumps({"checkout_url": checkout_url}, indent=2)
+        # ponytail: passthrough — the payment/confirmation link is in this response; exact field unverified.
+        return await _api("POST", "/orders", order)
 
-    prop = _get_property(hotel_id)
-    if not prop:
-        return _err(f"No property found with id '{hotel_id}'.")
-    room = next((r for r in _MOCK_ROOM_TYPES.get(hotel_id, []) if r["id"] == room_type_id), None)
-    if not room:
-        return _err(f"Room type '{room_type_id}' not found at {prop['name']}.")
-    if not room["available"]:
-        return _err(f"'{room['name']}' is not available for the selected dates.")
-
-    return json.dumps({
-        "checkout_url": checkout_url,
-        "hotel": prop["name"],
-        "room": room["name"],
-        "nights": nights,
-        "guests": guests,
-        "rate_per_night_idr": room["rate_per_night_idr"],
-        "total_idr": room["rate_per_night_idr"] * nights,
-        "currency": "IDR",
-    }, indent=2)
+    # Mock: no real booking; echo a stub confirmation for the offline demo.
+    return json.dumps({"success": True, "mock": True, "order": order,
+                       "payment_url": f"{BOOKING_BASE_URL}/pay/MOCK123"}, indent=2)
 
 
 if __name__ == "__main__":
