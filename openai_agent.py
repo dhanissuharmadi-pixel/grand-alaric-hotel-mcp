@@ -1,16 +1,17 @@
 """Run the Grand Alaric MCP tools through an OpenAI agent.
 
-    OPENAI_API_KEY=sk-... python openai_agent.py
+    OPENAI_API_KEY=sk-... python openai_agent.py                      # local, spawns server.py
+    MCP_URL=http://host:8000/mcp OPENAI_API_KEY=sk-... python openai_agent.py   # remote server
 
-The agent auto-discovers the tools from server.py over stdio — no schema
-duplication. Set OPENAI_MODEL to override the model (default: gpt-4o).
+The agent auto-discovers the tools — no schema duplication. Set OPENAI_MODEL to
+override the model (default: gpt-4o).
 """
 import asyncio
 import os
 import sys
 
 from agents import Agent, Runner
-from agents.mcp import MCPServerStdio
+from agents.mcp import MCPServerStdio, MCPServerStreamableHttp
 
 INSTRUCTIONS = (
     "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
@@ -19,12 +20,16 @@ INSTRUCTIONS = (
 )
 
 
+def _mcp_server():
+    """Remote server if MCP_URL is set, else spawn server.py locally over stdio."""
+    url = os.getenv("MCP_URL")
+    if url:
+        return MCPServerStreamableHttp(name="grand-alaric", params={"url": url})
+    return MCPServerStdio(name="grand-alaric", params={"command": sys.executable, "args": ["server.py"]})
+
+
 async def main() -> None:
-    # Spawns server.py as a stdio MCP subprocess; the agent lists its tools on connect.
-    async with MCPServerStdio(
-        name="grand-alaric",
-        params={"command": sys.executable, "args": ["server.py"]},
-    ) as server:
+    async with _mcp_server() as server:
         agent = Agent(
             name="Concierge",
             instructions=INSTRUCTIONS,

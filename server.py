@@ -268,7 +268,9 @@ async def get_checkout_link(
 
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
-    mcp.settings.port = int(os.getenv("PORT", "8000"))  # only used by sse/http transports
-    logger.info("Starting Grand Alaric MCP — transport=%s port=%d live=%s", transport, mcp.settings.port, _LIVE)
+    mcp.settings.host = os.getenv("HOST", "127.0.0.1")  # set 0.0.0.0 when hosting
+    mcp.settings.port = int(os.getenv("PORT", "8000"))  # host/port only used by sse/http transports
+    # ponytail: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
+    logger.info("Starting Grand Alaric MCP — transport=%s host=%s port=%d live=%s", transport, mcp.settings.host, mcp.settings.port, _LIVE)
     mcp.run(transport=transport)
 

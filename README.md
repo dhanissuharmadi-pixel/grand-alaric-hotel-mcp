@@ -68,6 +68,34 @@ export OPENAI_API_KEY=sk-...
 .venv/bin/python openai_agent.py
 ```
 
+### Remote / hosted
+
+Serve over HTTP instead of stdio so remote clients can reach it:
+
+```bash
+MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
+# MCP endpoint: http://<host>:8000/mcp
+```
+
+Point the OpenAI agent at it with `MCP_URL`:
+
+```bash
+MCP_URL=http://<host>:8000/mcp OPENAI_API_KEY=sk-... .venv/bin/python openai_agent.py
+```
+
+Or skip the client entirely — ChatGPT calls the hosted server directly via the
+Responses API:
+
+```python
+client.responses.create(
+    model="gpt-4o",
+    tools=[{"type": "mcp", "server_label": "grand-alaric", "server_url": "https://<host>/mcp"}],
+    input="I want a room in Bandung 01-07-2026 to 03-07-2026",
+)
+```
+
+The endpoint is unauthenticated — front it with your host's gateway/token if exposed beyond a trusted network.
+
 ## Status
 
 Set `GRAND_ALARIC_API_KEY` to call the live backend; with no key the server returns built-in mock data. Point at another site by setting `API_BASE_URL`, `BOOKING_BASE_URL`, and the key — no code change.
