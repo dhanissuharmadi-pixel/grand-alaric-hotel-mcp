@@ -5,8 +5,8 @@ and points at the live PHM API.
 
 ## What it is
 `server.py` - a FastMCP server exposing 6 hotel tools (search, availability, packages,
-nationalities, create_order). It proxies the live PHM API. `openai_agent.py` is just a
-local test client, not needed in production.
+nationalities, create_order). It proxies the live PHM API. Local testing tooling (a test
+client and Postman collections) lives on the `local-dev` branch — not needed in production.
 
 ## Run it (hosted, streamable-HTTP)
 ```bash
@@ -42,6 +42,7 @@ payment link. Treat the write path accordingly when exposing the server.
 - **VPS + systemd + Caddy + domain** — most control, most ops.
 
 ## Testing
-- `mcp_postman_collection.json` — exercises the MCP endpoint (initialize + 6 tools).
-- `rest_api_postman_collection.json` — hits the PHM REST API directly (set `apiKey`).
+Local testing tooling lives on the [`local-dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/local-dev) branch:
+- Postman collections for the MCP endpoint and the PHM REST API directly.
+- The OpenAI Agents test client (`openai_agent.py`).
 - MCP Inspector: `npx @modelcontextprotocol/inspector .venv/bin/python server.py`
