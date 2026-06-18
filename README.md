@@ -97,42 +97,7 @@ client.responses.create(
 )
 ```
 
-## Authentication (OAuth 2.0)
-
-By default the endpoint is **unauthenticated** (fine for local stdio / the Inspector).
-For a public deployment, the server runs as an OAuth 2.0 **resource server**: it
-validates the caller's bearer token and advertises an authorization server via
-`/.well-known/oauth-protected-resource` (RFC 9728), which ChatGPT/Claude use to
-discover where to log the user in. **The caller's token is validated and stops here —
-it is never forwarded to the PHM backend, which keeps using its own `phm-chat-api-key`.**
-
-You bring an established OAuth provider as the authorization server (Auth0, Stytch,
-Descope, Keycloak, …). It **must support Dynamic Client Registration** — ChatGPT relies
-on it. Then set:
-
-```bash
-OAUTH_ISSUER_URL=https://your-tenant.us.auth0.com   # the provider
-OAUTH_AUDIENCE=https://your-host/mcp                 # this server's public URL (token audience)
-OAUTH_REQUIRED_SCOPES="book:hotel"                   # optional, space-separated
-# OAUTH_JWKS_URL=...                                 # optional; defaults to issuer + /.well-known/jwks.json
-MCP_ALLOWED_HOSTS=your-host                           # required when public: the SDK blocks unknown
-                                                     # Host headers (DNS-rebinding protection). List the
-                                                     # public host(s), or "*" to disable behind a trusted proxy.
-MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
-```
-
-Add it in ChatGPT under **Settings → Connectors → (Developer mode) → Add custom
-connector**, pointing at `https://your-host/mcp`.
-
-**Local testing without a client session:** set `TEST_TOKEN` in `.env` and the server
-accepts that one bearer token, so Postman can call the protected server with
-`Authorization: Bearer <TEST_TOKEN>`. Dev only — never set it in production.
-
-```bash
-TEST_TOKEN=dev-secret-123 MCP_TRANSPORT=streamable-http PORT=8000 .venv/bin/python server.py
-```
-
-If none of `OAUTH_ISSUER_URL` / `TEST_TOKEN` are set, auth is disabled (current behaviour).
+The endpoint is unauthenticated — front it with your host's gateway/token if exposed beyond a trusted network.
 
 ## Status
 
