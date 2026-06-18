@@ -32,13 +32,13 @@ def _err(msg: str) -> str:
 
 def _validate_date(value: str, field: str) -> date:
     try:
-        return datetime.strptime(value, "%d-%m-%Y").date()
+        return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
-        raise ValueError(f"'{field}' must be DD-MM-YYYY, got: '{value}'")
+        raise ValueError(f"'{field}' must be YYYY-MM-DD, got: '{value}'")
 
 
 def _stay_dates(check_in_date: str, check_out_date: str) -> tuple[date, date]:
-    """Validate a DD-MM-YYYY stay range. Raises ValueError on bad input."""
+    """Validate a YYYY-MM-DD stay range. Raises ValueError on bad input."""
     check_in = _validate_date(check_in_date, "check_in_date")
     check_out = _validate_date(check_out_date, "check_out_date")
     if check_out <= check_in:
@@ -111,8 +111,8 @@ async def check_availability(
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
-        check_in_date: Check-in date in DD-MM-YYYY format.
-        check_out_date: Check-out date in DD-MM-YYYY format.
+        check_in_date: Check-in date in YYYY-MM-DD format.
+        check_out_date: Check-out date in YYYY-MM-DD format.
         guests: Number of guests (default 2).
     """
     try:
@@ -136,8 +136,8 @@ async def check_packages(
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
-        check_in_date: Check-in date in DD-MM-YYYY format.
-        check_out_date: Check-out date in DD-MM-YYYY format.
+        check_in_date: Check-in date in YYYY-MM-DD format.
+        check_out_date: Check-out date in YYYY-MM-DD format.
         guests: Number of guests.
     """
     try:
@@ -162,8 +162,8 @@ async def check_room_packages(
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
-        check_in_date: Check-in date in DD-MM-YYYY format.
-        check_out_date: Check-out date in DD-MM-YYYY format.
+        check_in_date: Check-in date in YYYY-MM-DD format.
+        check_out_date: Check-out date in YYYY-MM-DD format.
         package_code: Package code from check_packages (e.g. 'GNW').
         guests: Number of guests.
     """
@@ -208,8 +208,8 @@ async def create_order(
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
-        check_in_date: Check-in date in DD-MM-YYYY format.
-        check_out_date: Check-out date in DD-MM-YYYY format.
+        check_in_date: Check-in date in YYYY-MM-DD format.
+        check_out_date: Check-out date in YYYY-MM-DD format.
         guest_name: Full name of the primary guest.
         guest_email: Guest email for the booking confirmation.
         guest_phone: Guest phone number (e.g. '+6282214171060').

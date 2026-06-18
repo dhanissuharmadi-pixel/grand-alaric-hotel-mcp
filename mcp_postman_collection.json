@@ -1,0 +1,315 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "Grand Alaric Hotel MCP (Streamable HTTP)",
+    "description": "Tests server.py over the MCP streamable-HTTP transport.\n\nStart the server first:\n  MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py\n\nEndpoint: POST {{baseUrl}}{{mcpPath}}  (default http://127.0.0.1:8000/mcp)\n\nRun 'initialize' FIRST. It captures the Mcp-Session-Id response header into\n{{sessionId}} and auto-sends the required notifications/initialized message. Every\nother request reuses {{sessionId}}, so they will fail until initialize has run once.\n\nResponses come back as Server-Sent Events (Content-Type: text/event-stream); the\nJSON-RPC payload is on the 'data:' line of the response body (the test scripts parse it).\n\nDates are YYYY-MM-DD. check_in_date cannot be in the past and check_out must be\nafter check_in. Replace hotel_id / room_id / package_code with real values pulled\nfrom search_hotels, check_availability and check_packages responses.\n\nWARNING: 'create_order' places a REAL booking against the live PHM API. Only run it\nintentionally, with valid details.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000", "type": "string" },
+    { "key": "mcpPath", "value": "/mcp", "type": "string" },
+    { "key": "protocolVersion", "value": "2025-06-18", "type": "string" },
+    { "key": "sessionId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. initialize (handshake)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The MCP streamable-HTTP transport returns the session id as a response header.",
+              "const sid = pm.response.headers.get('mcp-session-id') || pm.response.headers.get('Mcp-Session-Id');",
+              "if (sid) {",
+              "    pm.collectionVariables.set('sessionId', sid);",
+              "    console.log('Captured Mcp-Session-Id:', sid);",
+              "} else {",
+              "    console.warn('No Mcp-Session-Id header on the initialize response.');",
+              "}",
+              "",
+              "pm.test('initialize returned 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Mcp-Session-Id header present', function () {",
+              "    pm.expect(sid, 'Mcp-Session-Id header').to.be.a('string').and.not.empty;",
+              "});",
+              "",
+              "// MCP requires notifications/initialized after the handshake and BEFORE any",
+              "// tools/call. Fire it automatically here so the tool requests work.",
+              "if (sid) {",
+              "    const url = pm.collectionVariables.get('baseUrl') + pm.collectionVariables.get('mcpPath');",
+              "    pm.sendRequest({",
+              "        url: url,",
+              "        method: 'POST',",
+              "        header: {",
+              "            'Content-Type': 'application/json',",
+              "            'Accept': 'application/json, text/event-stream',",
+              "            'Mcp-Session-Id': sid,",
+              "            'MCP-Protocol-Version': pm.collectionVariables.get('protocolVersion')",
+              "        },",
+              "        body: {",
+              "            mode: 'raw',",
+              "            raw: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })",
+              "        }",
+              "    }, function (err, res) {",
+              "        if (err) { console.warn('notifications/initialized failed:', err); }",
+              "        else { console.log('notifications/initialized sent, status:', res.code); }",
+              "    });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-06-18\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"postman-mcp-test\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "JSON-RPC initialize handshake. The Tests script captures the Mcp-Session-Id response header into {{sessionId}} and then sends the required notifications/initialized message."
+      }
+    },
+    {
+      "name": "2. tools/call - search_hotels",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search_hotels\",\n    \"arguments\": {\n      \"location\": \"Bandung\"\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "search_hotels(location: string). Lists Grand Alaric properties."
+      }
+    },
+    {
+      "name": "3. tools/call - check_availability",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"check_availability\",\n    \"arguments\": {\n      \"hotel_id\": \"GSV\",\n      \"check_in_date\": \"2026-07-01\",\n      \"check_out_date\": \"2026-07-03\",\n      \"guests\": 2\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "check_availability(hotel_id, check_in_date 'YYYY-MM-DD', check_out_date 'YYYY-MM-DD', guests). Returns room types and rates."
+      }
+    },
+    {
+      "name": "4. tools/call - check_packages",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"check_packages\",\n    \"arguments\": {\n      \"hotel_id\": \"GSV\",\n      \"check_in_date\": \"2026-07-01\",\n      \"check_out_date\": \"2026-07-03\",\n      \"guests\": 2\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "check_packages(hotel_id, check_in_date, check_out_date, guests). Lists bookable promo bundles; note the package_code from the response for check_room_packages."
+      }
+    },
+    {
+      "name": "5. tools/call - check_room_packages",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"check_room_packages\",\n    \"arguments\": {\n      \"hotel_id\": \"GSV\",\n      \"check_in_date\": \"2026-07-01\",\n      \"check_out_date\": \"2026-07-04\",\n      \"package_code\": \"GNW\",\n      \"guests\": 2\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "check_room_packages(hotel_id, check_in_date, check_out_date, package_code, guests). Replace package_code with one from check_packages."
+      }
+    },
+    {
+      "name": "6. tools/call - list_nationalities",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 6,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"list_nationalities\",\n    \"arguments\": {}\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "list_nationalities() — no arguments. Returns valid nation_code / phone-code values for create_order."
+      }
+    },
+    {
+      "name": "7. tools/call - create_order  [LIVE BOOKING]",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.text();",
+              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+              "if (line) {",
+              "    try {",
+              "        const payload = JSON.parse(line.slice(5).trim());",
+              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
+              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json, text/event-stream" },
+          { "key": "Mcp-Session-Id", "value": "{{sessionId}}" },
+          { "key": "MCP-Protocol-Version", "value": "{{protocolVersion}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 7,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"create_order\",\n    \"arguments\": {\n      \"hotel_id\": \"GSV\",\n      \"check_in_date\": \"2026-07-01\",\n      \"check_out_date\": \"2026-07-03\",\n      \"guest_name\": \"Test Guest\",\n      \"guest_email\": \"test@example.com\",\n      \"guest_phone\": \"+6282214171060\",\n      \"room_id\": \"SUPK-IWS312ROO\",\n      \"package_code\": \"\",\n      \"package_id\": \"\",\n      \"nation_code\": \"id\",\n      \"salutation\": 3,\n      \"guests\": 2,\n      \"promocode\": \"\"\n    }\n  }\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
+        "description": "WARNING: places a REAL booking against the live PHM API. Pass EITHER room_id (plain room, from check_availability) OR package_id + package_code (package, from check_room_packages) — not both. room_id/package_id shown here are placeholders; replace with real IDs. Returns the order result incl. a payment link."
+      }
+    }
+  ]
+}

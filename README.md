@@ -13,7 +13,7 @@ An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
 | `list_nationalities` | Valid nationality/phone codes for `create_order` |
 | `create_order` | Place a room or package booking; returns a payment link |
 
-Dates are entered as `DD-MM-YYYY`.
+Dates are entered as `YYYY-MM-DD`.
 
 ## Setup
 
@@ -93,7 +93,7 @@ Responses API:
 client.responses.create(
     model="gpt-4o",
     tools=[{"type": "mcp", "server_label": "grand-alaric", "server_url": "https://<host>/mcp"}],
-    input="I want a room in Bandung 01-07-2026 to 03-07-2026",
+    input="I want a room in Bandung 2026-07-01 to 2026-07-03",
 )
 ```
 

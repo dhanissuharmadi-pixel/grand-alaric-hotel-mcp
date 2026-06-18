@@ -12,3 +12,4 @@ wheels/
 # Postman Git-sync output; keep it (and any keys it may store) out of the repo
 postman/collections/
 postman/environments/
+.postman/
