@@ -21,6 +21,11 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://api6.alarichotels.com/webapi/c
 API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")
 API_KEY_HEADER = "phm-chat-api-key"
 
+# Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
+# a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
+MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
+MCP_ALLOWED_ORIGINS = [o for o in os.getenv("MCP_ALLOWED_ORIGINS", "").replace(",", " ").split() if o]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,6 +70,20 @@ async def _api(method: str, path: str, json_body: dict | None = None) -> str:
         return _err(f"Upstream API error: {exc}")
 
 
+def _transport_security_kwargs() -> dict:
+    """Allow the public Host when hosted behind a tunnel/proxy. Default (no env) keeps
+    the SDK's DNS-rebinding protection on, localhost-only — unchanged for local dev."""
+    if not MCP_ALLOWED_HOSTS and not MCP_ALLOWED_ORIGINS:
+        return {}
+    from mcp.server.transport_security import TransportSecuritySettings
+    if "*" in MCP_ALLOWED_HOSTS:
+        logger.warning("DNS-rebinding protection DISABLED (MCP_ALLOWED_HOSTS=*) — only behind a trusted proxy/tunnel")
+        return {"transport_security": TransportSecuritySettings(enable_dns_rebinding_protection=False)}
+    origins = MCP_ALLOWED_ORIGINS or [f"https://{h}" for h in MCP_ALLOWED_HOSTS]
+    logger.info("Allowed hosts=%s origins=%s", MCP_ALLOWED_HOSTS, origins)
+    return {"transport_security": TransportSecuritySettings(allowed_hosts=MCP_ALLOWED_HOSTS, allowed_origins=origins)}
+
+
 # ---------------------------------------------------------------------------
 # MCP server
 # ---------------------------------------------------------------------------
@@ -80,6 +99,7 @@ mcp = FastMCP(
         "email, phone, nationality), use create_order to place the booking, then "
         "give them the payment link from the response to complete payment."
     ),
+    **_transport_security_kwargs(),
 )
 
 
