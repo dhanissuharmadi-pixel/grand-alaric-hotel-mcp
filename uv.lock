@@ -266,6 +266,7 @@ dependencies = [
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "openai-agents" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "python-dotenv" },
 ]
 
@@ -274,6 +275,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.27.2" },
     { name = "openai-agents", specifier = ">=0.17.5" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
 ]
 
