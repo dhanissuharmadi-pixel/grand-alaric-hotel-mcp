@@ -2,9 +2,31 @@
   "info": {
     "_postman_id": "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
     "name": "Grand Alaric Hotel MCP (Streamable HTTP)",
-    "description": "Tests server.py over the MCP streamable-HTTP transport.\n\nStart the server first:\n  MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py\n\nEndpoint: POST {{baseUrl}}{{mcpPath}}  (default http://127.0.0.1:8000/mcp)\n\nRun 'initialize' FIRST. It captures the Mcp-Session-Id response header into\n{{sessionId}} and auto-sends the required notifications/initialized message. Every\nother request reuses {{sessionId}}, so they will fail until initialize has run once.\n\nResponses come back as Server-Sent Events (Content-Type: text/event-stream); the\nJSON-RPC payload is on the 'data:' line of the response body (the test scripts parse it).\n\nDates are YYYY-MM-DD. check_in_date cannot be in the past and check_out must be\nafter check_in. Replace hotel_id / room_id / package_code with real values pulled\nfrom search_hotels, check_availability and check_packages responses.\n\nWARNING: 'create_order' places a REAL booking against the live PHM API. Only run it\nintentionally, with valid details.",
+    "description": "Tests server.py over the MCP streamable-HTTP transport.\n\nStart the server first:\n  MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py\n\nEndpoint: POST {{baseUrl}}{{mcpPath}}  (default http://127.0.0.1:8000/mcp)\n\nRun 'initialize' FIRST. It captures the Mcp-Session-Id response header into\n{{sessionId}} and auto-sends the required notifications/initialized message. Every\nother request reuses {{sessionId}}, so they will fail until initialize has run once.\n\nResponses come back as Server-Sent Events (Content-Type: text/event-stream); the\nJSON-RPC payload is on the 'data:' line of the response body. A collection-level test\nscript (Scripts tab on the collection) checks status 200 and the SSE payload for\nevery request, so individual requests carry no test script except initialize.\n\nDates are YYYY-MM-DD. check_in_date cannot be in the past and check_out must be\nafter check_in. Replace hotel_id / room_id / package_code with real values pulled\nfrom search_hotels, check_availability and check_packages responses.\n\nWARNING: 'create_order' places a REAL booking against the live PHM API. Only run it\nintentionally, with valid details.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level: runs after EVERY request. Generic 200 + SSE-payload checks",
+          "// for the tool calls. (initialize adds its own script for session capture.)",
+          "pm.test('returned 200', function () { pm.response.to.have.status(200); });",
+          "const body = pm.response.text();",
+          "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
+          "if (line) {",
+          "    try {",
+          "        const payload = JSON.parse(line.slice(5).trim());",
+          "        console.log('JSON-RPC payload:', JSON.stringify(payload, null, 2));",
+          "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
+          "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
+          "}"
+        ]
+      }
+    }
+  ],
   "variable": [
     { "key": "baseUrl", "value": "http://127.0.0.1:8000", "type": "string" },
     { "key": "mcpPath", "value": "/mcp", "type": "string" },
@@ -28,10 +50,6 @@
               "} else {",
               "    console.warn('No Mcp-Session-Id header on the initialize response.');",
               "}",
-              "",
-              "pm.test('initialize returned 200', function () {",
-              "    pm.response.to.have.status(200);",
-              "});",
               "pm.test('Mcp-Session-Id header present', function () {",
               "    pm.expect(sid, 'Mcp-Session-Id header').to.be.a('string').and.not.empty;",
               "});",
@@ -79,26 +97,6 @@
     },
     {
       "name": "2. tools/call - search_hotels",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [
@@ -118,26 +116,6 @@
     },
     {
       "name": "3. tools/call - check_availability",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [
@@ -157,26 +135,6 @@
     },
     {
       "name": "4. tools/call - check_packages",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [
@@ -196,26 +154,6 @@
     },
     {
       "name": "5. tools/call - check_room_packages",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [
@@ -230,31 +168,11 @@
           "options": { "raw": { "language": "json" } }
         },
         "url": { "raw": "{{baseUrl}}{{mcpPath}}", "host": ["{{baseUrl}}{{mcpPath}}"] },
-        "description": "check_room_packages(hotel_id, check_in_date, check_out_date, package_code, guests). Replace package_code with one from check_packages."
+        "description": "check_room_packages(hotel_id, check_in_date, check_out_date, package_code, guests). Replace package_code with one from check_packages. GNW needs a 3-night minimum (this example is 3 nights)."
       }
     },
     {
       "name": "6. tools/call - list_nationalities",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [
@@ -274,26 +192,6 @@
     },
     {
       "name": "7. tools/call - create_order  [LIVE BOOKING]",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('tools/call returned 200', function () { pm.response.to.have.status(200); });",
-              "const body = pm.response.text();",
-              "const line = body.split('\\n').find(function (l) { return l.indexOf('data:') === 0; });",
-              "if (line) {",
-              "    try {",
-              "        const payload = JSON.parse(line.slice(5).trim());",
-              "        console.log('JSON-RPC result:', JSON.stringify(payload, null, 2));",
-              "        pm.test('no JSON-RPC error', function () { pm.expect(payload.error, payload.error && payload.error.message).to.be.undefined; });",
-              "    } catch (e) { console.warn('Could not parse SSE data line:', e); }",
-              "}"
-            ]
-          }
-        }
-      ],
       "request": {
         "method": "POST",
         "header": [

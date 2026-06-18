@@ -235,7 +235,7 @@ async def create_order(
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
     order["promocode"] = promocode
     logger.info("create_order hotel=%s room=%s package=%s guest=%r", hotel_id, room_id, package_id, guest_name)
-    # passthrough — the payment/confirmation link is in this response; exact field unverified.
+    # passthrough — the payment/confirmation link is in this response.
     return await _api("POST", "/orders", order)
 
 
