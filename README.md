@@ -1,84 +1,58 @@
-# Grand Alaric Hotel MCP Server
+# Grand Alaric Hotel MCP — Local Dev & Testing
 
-An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
+This branch holds the **local development and testing tooling** that isn't needed to
+deploy the server. The production server and deployment notes live on **`main`**
+(see `main`'s `README.md` and `DEPLOY.md`).
 
-## Tools
+In addition to `server.py`, this branch carries:
 
-| Tool | Description |
+| File | Purpose |
 |---|---|
-| `search_hotels` | List Grand Alaric properties |
-| `check_availability` | Get available rooms and prices for a hotel and date range |
-| `check_packages` | List bookable packages (promo bundles) for a hotel and dates |
-| `check_room_packages` | List rooms and prices within a specific package |
-| `list_nationalities` | Valid nationality/phone codes for `create_order` |
-| `create_order` | Place a room or package booking; returns a payment link |
-
-Dates are entered as `YYYY-MM-DD`.
+| `openai_agent.py` | CLI client that runs the MCP tools through the OpenAI Agents SDK |
+| `(local) mcp_postman_collection.json` | Postman collection hitting the MCP server (streamable-HTTP) |
+| `(direct) rest_api_postman_collection.json` | Postman collection hitting the PHM REST API directly |
 
 ## Setup
 
-**Requirements:** Python 3.13+, [uv](https://github.com/astral-sh/uv)
-
 ```bash
-git clone https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp
-cd grand-alaric-hotel-mcp
-uv sync
-```
-
-Set the API key (sent as the `phm-chat-api-key` header) — in your shell or a local `.env`:
-
-```bash
+uv sync                       # installs server deps + openai-agents (test client)
 export GRAND_ALARIC_API_KEY=your_api_key
 ```
 
-`API_BASE_URL` defaults to the live PHM endpoint; override it only to point at a different backend.
+## MCP Inspector
 
-## Usage
-
-### Claude / MCP Inspector
+Interactively call the tools over stdio:
 
 ```bash
 npx @modelcontextprotocol/inspector .venv/bin/python server.py
 ```
 
-Open the URL printed in the terminal to test tools interactively.
+Open the printed URL, hit **Connect**, and run any of the 6 tools. Dates are `YYYY-MM-DD`.
 
-### Claude Desktop
+## OpenAI agent (CLI test client)
 
-Add to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "grand-alaric": {
-      "command": "/path/to/.venv/bin/python",
-      "args": ["/path/to/server.py"],
-      "env": {
-        "GRAND_ALARIC_API_KEY": "your_api_key"
-      }
-    }
-  }
-}
-```
-
-### OpenAI / ChatGPT
-
-`openai_agent.py` runs the tools through the OpenAI Agents SDK, which speaks MCP
-natively — it spawns `server.py` and auto-discovers the tools, no schema copy.
+`openai_agent.py` speaks MCP natively — it spawns `server.py` and auto-discovers the
+tools (no schema duplication).
 
 ```bash
 export OPENAI_API_KEY=sk-...
-.venv/bin/python openai_agent.py
+.venv/bin/python openai_agent.py                                  # local, spawns server.py
+MCP_URL=http://<host>:8000/mcp OPENAI_API_KEY=sk-... .venv/bin/python openai_agent.py   # remote server
 ```
 
-### Remote / hosted
+## Postman collections
 
-Serve over HTTP instead of stdio so remote clients (e.g. ChatGPT connectors) can reach it:
+Import either collection in Postman:
 
-```bash
-MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
-# MCP endpoint: http://<host>:8000/mcp
-```
+- **`(local) mcp_postman_collection.json`** — tests the MCP server over streamable-HTTP.
+  Start the server first, then run `initialize` (it captures the session and sends the
+  `notifications/initialized` message), then any tool request.
+  ```bash
+  MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
+  ```
+- **`(direct) rest_api_postman_collection.json`** — hits the PHM REST API directly
+  (bypasses the MCP server). Set the `apiKey` collection variable to your
+  `GRAND_ALARIC_API_KEY` before running.
 
-See [`DEPLOY.md`](DEPLOY.md) for hosting, environment variables, and auth. The endpoint
-is unauthenticated by default — don't expose it publicly without a gateway or auth.
+> The GNW package requires a 3-night minimum stay. `create_order` places a **real**
+> booking against the live PHM API.
