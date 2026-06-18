@@ -35,14 +35,6 @@ export GRAND_ALARIC_API_KEY=your_api_key
 
 ## Usage
 
-### Claude / MCP Inspector
-
-```bash
-npx @modelcontextprotocol/inspector .venv/bin/python server.py
-```
-
-Open the URL printed in the terminal to test tools interactively.
-
 ### Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -61,16 +53,6 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### OpenAI / ChatGPT
-
-`openai_agent.py` runs the tools through the OpenAI Agents SDK, which speaks MCP
-natively — it spawns `server.py` and auto-discovers the tools, no schema copy.
-
-```bash
-export OPENAI_API_KEY=sk-...
-.venv/bin/python openai_agent.py
-```
-
 ### Remote / hosted
 
 Serve over HTTP instead of stdio so remote clients (e.g. ChatGPT connectors) can reach it:
@@ -82,3 +64,10 @@ MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
 
 See [`DEPLOY.md`](DEPLOY.md) for hosting, environment variables, and auth. The endpoint
 is unauthenticated by default — don't expose it publicly without a gateway or auth.
+
+## Local development & testing
+
+Local-only tooling — the MCP Inspector workflow, the OpenAI Agents test client
+(`openai_agent.py`), and the Postman collections — lives on the
+[`local-dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/local-dev)
+branch. None of it is needed to deploy.
