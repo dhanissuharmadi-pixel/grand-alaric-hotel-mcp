@@ -24,7 +24,6 @@ API_KEY_HEADER = "phm-chat-api-key"
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
 # a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
 MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
-MCP_ALLOWED_ORIGINS = [o for o in os.getenv("MCP_ALLOWED_ORIGINS", "").replace(",", " ").split() if o]
 
 
 # ---------------------------------------------------------------------------
@@ -73,13 +72,13 @@ async def _api(method: str, path: str, json_body: dict | None = None) -> str:
 def _transport_security_kwargs() -> dict:
     """Allow the public Host when hosted behind a tunnel/proxy. Default (no env) keeps
     the SDK's DNS-rebinding protection on, localhost-only — unchanged for local dev."""
-    if not MCP_ALLOWED_HOSTS and not MCP_ALLOWED_ORIGINS:
+    if not MCP_ALLOWED_HOSTS:
         return {}
     from mcp.server.transport_security import TransportSecuritySettings
     if "*" in MCP_ALLOWED_HOSTS:
         logger.warning("DNS-rebinding protection DISABLED (MCP_ALLOWED_HOSTS=*) — only behind a trusted proxy/tunnel")
         return {"transport_security": TransportSecuritySettings(enable_dns_rebinding_protection=False)}
-    origins = MCP_ALLOWED_ORIGINS or [f"https://{h}" for h in MCP_ALLOWED_HOSTS]
+    origins = [f"https://{h}" for h in MCP_ALLOWED_HOSTS]
     logger.info("Allowed hosts=%s origins=%s", MCP_ALLOWED_HOSTS, origins)
     return {"transport_security": TransportSecuritySettings(allowed_hosts=MCP_ALLOWED_HOSTS, allowed_origins=origins)}
 
@@ -250,10 +249,9 @@ async def create_order(
         return _err("Provide either room_id (from check_availability) or package_id (from check_room_packages).")
 
     selection = {"package_code": package_code, "package_id": package_id} if package_id else {"room_id": room_id}
-    order = _stay_body(hotel_id, check_in, check_out, guests, **selection,
+    order = _stay_body(hotel_id, check_in, check_out, guests, **selection, promocode=promocode,
                        guest={"salutation": salutation, "nation_code": nation_code,
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
-    order["promocode"] = promocode
     logger.info("create_order hotel=%s room=%s package=%s guest=%r", hotel_id, room_id, package_id, guest_name)
     # passthrough — the payment/confirmation link is in this response.
     return await _api("POST", "/orders", order)
