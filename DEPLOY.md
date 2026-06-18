@@ -4,7 +4,7 @@ Notes for hosting the Grand Alaric Hotel MCP server. Current code is unauthentic
 and points at the live PHM API.
 
 ## What it is
-`server.py` — a FastMCP server exposing 6 hotel tools (search, availability, packages,
+`server.py` - a FastMCP server exposing 6 hotel tools (search, availability, packages,
 nationalities, create_order). It proxies the live PHM API. `openai_agent.py` is just a
 local test client, not needed in production.
 
@@ -25,21 +25,12 @@ On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from e
 | `MCP_ALLOWED_HOSTS` | **yes (public)** | the public host(s), e.g. `mcp.example.com`. The SDK blocks unknown `Host` headers (DNS-rebinding protection); set this to your domain, or `*` to disable the check behind a trusted proxy. |
 | `API_BASE_URL` | no | defaults to the live PHM endpoint; override only to point elsewhere. |
 
-## Authentication — DECISION NEEDED
+## Authentication - DECISION NEEDED
 The endpoint is currently **unauthenticated** — anyone who has the URL can call every
-tool, including `create_order`. That is **not** acceptable for a permanent public
-deployment.
+tool, including `create_order`. which needs to be changed for public permanent deployment
 
-A complete OAuth 2.0 resource-server implementation (validate caller tokens against an
-external provider, e.g. Auth0/Stytch; ChatGPT-connector compatible) was built and then
-reverted to keep the demo simple. To restore it:
-```
-git show 52fb891   # the revert commit; revert it to bring OAuth back
-# (original OAuth commit: a54b4de)
-```
-Recommendation: restore OAuth, or put a gateway/token in front, before going live.
 
-## ⚠️ create_order makes REAL bookings
+## create_order makes REAL bookings
 `create_order` does a live `POST /orders` against the production PHM API using the
 server-side key. It creates real (pending-until-paid) reservations and returns a real
 payment link. Treat the write path accordingly when exposing the server.
