@@ -32,6 +32,24 @@ MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 WIDGET_MIME = "text/html+skybridge"
 
+# The widget iframe enforces a CSP; external image/asset hosts must be allowlisted
+# or they're silently blocked. Room images come from the grand-alaric image CDN.
+# Keys are OpenAI-specific (openai/widgetCSP, openai/widgetDomain) with camelCase
+# sub-fields — this is what ChatGPT's template validator reads.
+WIDGET_RESOURCE_DOMAINS = ["https://*.grandalaric.com", "https://*.alarichotels.com"]
+WIDGET_DOMAIN = os.getenv("WIDGET_DOMAIN", "https://grandalaric.com")
+WIDGET_CSP_META = {
+    # ChatGPT's validator uses snake_case field names here (it rejects camelCase as
+    # "no CSP or redirect domain list"). resource_domains covers images/fonts/styles.
+    "openai/widgetCSP": {
+        "connect_domains": [],
+        "resource_domains": WIDGET_RESOURCE_DOMAINS,
+    },
+    "openai/widgetDomain": WIDGET_DOMAIN,
+    # also expose the newer MCP-Apps spec location (camelCase), harmless if unread.
+    "ui": {"csp": {"connectDomains": [], "resourceDomains": WIDGET_RESOURCE_DOMAINS}},
+}
+
 
 @lru_cache(maxsize=None)
 def _widget_html(name: str) -> str:
@@ -118,10 +136,33 @@ mcp = FastMCP(
 # Widgets (Apps SDK UI rendered inside ChatGPT)
 # ---------------------------------------------------------------------------
 
-@mcp.resource("ui://widget/room-results.html", mime_type=WIDGET_MIME)
+WIDGET_URI = "ui://widget/room-results.html"
+
+
+@mcp.resource(WIDGET_URI, mime_type=WIDGET_MIME, meta=WIDGET_CSP_META)
 def room_results_widget() -> str:
     """HTML shell for the room-results widget (rendered by check_availability)."""
     return _widget_html("room-results")
+
+
+# ChatGPT reads a widget's CSP/domain config from the resource *template*, not the
+# concrete resource. FastMCP only auto-creates templates for parameterized URIs, so
+# register this static widget as a template explicitly (mirrors the pizzaz example).
+import mcp.types as _types  # noqa: E402
+
+
+@mcp._mcp_server.list_resource_templates()
+async def _list_widget_templates() -> list[_types.ResourceTemplate]:
+    return [
+        _types.ResourceTemplate(
+            uriTemplate=WIDGET_URI,
+            name="room-results",
+            title="Room results",
+            description="Available room cards for check_availability.",
+            mimeType=WIDGET_MIME,
+            _meta={**WIDGET_CSP_META, "openai/outputTemplate": WIDGET_URI},
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
