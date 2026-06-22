@@ -20,14 +20,6 @@ const idr = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-function formatPrice(price, currency) {
-  if (typeof price !== "number") return "";
-  if (currency && currency !== "IDR") {
-    return `${currency} ${price.toLocaleString()}`;
-  }
-  return idr.format(price);
-}
-
 function RoomCard({ room }) {
   return (
     <div className="flex items-center gap-3 sm:gap-4 px-2 py-3 -mx-2 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
@@ -48,7 +40,7 @@ function RoomCard({ room }) {
       </div>
       <div className="shrink-0 text-right">
         <div className="text-sm sm:text-base font-semibold">
-          {formatPrice(room.price, room.currency)}
+          {idr.format(room.price)}
         </div>
         <div className="text-xs text-black/50 dark:text-white/50">per night</div>
       </div>

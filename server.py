@@ -37,23 +37,17 @@ WIDGET_MIME = "text/html+skybridge"
 # Keys are OpenAI-specific (openai/widgetCSP, openai/widgetDomain) with camelCase
 # sub-fields — this is what ChatGPT's template validator reads.
 WIDGET_RESOURCE_DOMAINS = ["https://*.grandalaric.com", "https://*.alarichotels.com"]
-WIDGET_DOMAIN = os.getenv("WIDGET_DOMAIN", "https://grandalaric.com")
 WIDGET_CSP_META = {
     # ChatGPT's validator uses snake_case field names here (it rejects camelCase as
     # "no CSP or redirect domain list"). resource_domains covers images/fonts/styles.
-    "openai/widgetCSP": {
-        "connect_domains": [],
-        "resource_domains": WIDGET_RESOURCE_DOMAINS,
-    },
-    "openai/widgetDomain": WIDGET_DOMAIN,
-    # also expose the newer MCP-Apps spec location (camelCase), harmless if unread.
-    "ui": {"csp": {"connectDomains": [], "resourceDomains": WIDGET_RESOURCE_DOMAINS}},
+    "openai/widgetCSP": {"resource_domains": WIDGET_RESOURCE_DOMAINS},
+    "openai/widgetDomain": "https://grandalaric.com",
 }
 
 
 @lru_cache(maxsize=None)
-def _widget_html(name: str) -> str:
-    return (ASSETS_DIR / f"{name}.html").read_text(encoding="utf-8")
+def _widget_html() -> str:
+    return (ASSETS_DIR / "room-results.html").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +136,7 @@ WIDGET_URI = "ui://widget/room-results.html"
 @mcp.resource(WIDGET_URI, mime_type=WIDGET_MIME, meta=WIDGET_CSP_META)
 def room_results_widget() -> str:
     """HTML shell for the room-results widget (rendered by check_availability)."""
-    return _widget_html("room-results")
+    return _widget_html()
 
 
 # ChatGPT reads a widget's CSP/domain config from the resource *template*, not the
