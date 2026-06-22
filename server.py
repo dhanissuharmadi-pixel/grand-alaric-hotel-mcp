@@ -5,6 +5,9 @@ import json
 import logging
 import os
 from datetime import date, datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 load_dotenv()  # read GRAND_ALARIC_API_KEY etc. from a local .env if present
 
@@ -24,6 +27,15 @@ API_KEY_HEADER = "phm-chat-api-key"
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
 # a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
 MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
+
+# Apps SDK widgets: self-contained HTML built from widgets/ (see widgets/README.md).
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+WIDGET_MIME = "text/html+skybridge"
+
+
+@lru_cache(maxsize=None)
+def _widget_html(name: str) -> str:
+    return (ASSETS_DIR / f"{name}.html").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +115,16 @@ mcp = FastMCP(
 
 
 # ---------------------------------------------------------------------------
+# Widgets (Apps SDK UI rendered inside ChatGPT)
+# ---------------------------------------------------------------------------
+
+@mcp.resource("ui://widget/room-results.html", mime_type=WIDGET_MIME)
+def room_results_widget() -> str:
+    """HTML shell for the room-results widget (rendered by check_availability)."""
+    return _widget_html("room-results")
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -118,13 +140,21 @@ async def search_hotels(location: str) -> str:
     return await _api("GET", "/hotels")
 
 
-@mcp.tool()
+@mcp.tool(
+    meta={
+        "openai/outputTemplate": "ui://widget/room-results.html",
+        "openai/toolInvocation/invoking": "Checking availability…",
+        "openai/toolInvocation/invoked": "Found available rooms",
+        "openai/widgetAccessible": True,
+    },
+    structured_output=True,  # emit structuredContent so the widget can read window.openai.toolOutput
+)
 async def check_availability(
     hotel_id: str,
     check_in_date: str,
     check_out_date: str,
     guests: int = 2,
-) -> str:
+) -> dict[str, Any]:
     """
     Return available room types and rates for a hotel and date range.
 
@@ -137,10 +167,14 @@ async def check_availability(
     try:
         check_in, check_out = _stay_dates(check_in_date, check_out_date)
     except ValueError as exc:
-        return _err(str(exc))
+        return {"error": str(exc)}
 
     logger.info("check_availability hotel=%s %s→%s guests=%d", hotel_id, check_in_date, check_out_date, guests)
-    return await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
+    raw = await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
+    try:
+        return json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
+    except json.JSONDecodeError:
+        return {"error": raw}
 
 
 @mcp.tool()

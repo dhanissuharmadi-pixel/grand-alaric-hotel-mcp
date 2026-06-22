@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* ChatGPT tells us its theme via window.openai.theme; we mirror it with a `.dark`
+   class on the root, so use class-based (not media-query) dark variants. */
+@custom-variant dark (&:where(.dark, .dark *));
