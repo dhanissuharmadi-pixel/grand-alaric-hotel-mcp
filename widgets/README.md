@@ -25,15 +25,20 @@ React 19 · Tailwind 4 · Vite (single-file build). The built HTML inlines all J
 ## Develop
 ```bash
 npm install
-npm run dev      # open http://localhost:<port>/preview.html — mocks window.openai with sample rooms
+npm run dev      # then open /preview.html (rooms) or /preview-checkout.html (payment)
 ```
+The preview pages mock `window.openai` with sample data so you can see each widget standalone.
 
 ## Build (regenerate the served HTML)
 ```bash
-npm run build    # writes ../assets/room-results.html
+npm run build    # writes ../assets/room-results.html and ../assets/checkout.html
 ```
-Commit the regenerated `assets/*.html` — the server serves that file, and deployment
-does not run npm.
+`viteSingleFile` can't bundle multiple entries in one pass, so the build runs vite once
+per widget via the `WIDGET` env var. Commit the regenerated `assets/*.html` — the server
+serves those files, and deployment does not run npm.
 
 ## Widgets
 - `room-results` — room cards (image, name, price) for `check_availability`.
+- `checkout` — "Complete payment" button for `create_order`. The payment URL comes
+  from `structuredContent` so the model never retypes it (a long signed token gets
+  corrupted if the model echoes it as text).

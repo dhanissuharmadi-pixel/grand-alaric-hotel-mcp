@@ -1,18 +1,6 @@
-import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
+import { useOpenAiGlobal } from "./openai.js";
 import "./index.css";
-
-// --- read host state from window.openai (populated by ChatGPT) ----------------
-// `toolOutput` is the tool's structuredContent; `theme` is "light" | "dark".
-function useOpenAiGlobal(key) {
-  return useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener("openai:set_globals", onChange);
-      return () => window.removeEventListener("openai:set_globals", onChange);
-    },
-    () => window.openai?.[key],
-  );
-}
 
 const idr = new Intl.NumberFormat("id-ID", {
   style: "currency",

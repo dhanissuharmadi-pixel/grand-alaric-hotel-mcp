@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "WIDGET=room-results vite build && WIDGET=checkout vite build"
   },
   "dependencies": {
     "react": "^19.1.1",

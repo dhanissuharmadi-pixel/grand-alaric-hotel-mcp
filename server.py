@@ -32,22 +32,27 @@ MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 WIDGET_MIME = "text/html+skybridge"
 
-# The widget iframe enforces a CSP; external image/asset hosts must be allowlisted
-# or they're silently blocked. Room images come from the grand-alaric image CDN.
-# Keys are OpenAI-specific (openai/widgetCSP, openai/widgetDomain) with camelCase
-# sub-fields — this is what ChatGPT's template validator reads.
-WIDGET_RESOURCE_DOMAINS = ["https://*.grandalaric.com", "https://*.alarichotels.com"]
-WIDGET_CSP_META = {
-    # ChatGPT's validator uses snake_case field names here (it rejects camelCase as
-    # "no CSP or redirect domain list"). resource_domains covers images/fonts/styles.
-    "openai/widgetCSP": {"resource_domains": WIDGET_RESOURCE_DOMAINS},
-    "openai/widgetDomain": "https://grandalaric.com",
+# The widget iframe enforces a CSP; external hosts must be allowlisted or they're
+# silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
+# Each widget declares only the domains it needs: room-results loads images from the
+# grand-alaric CDN; checkout opens the payment page via openExternal (redirect_domains).
+WIDGETS = {
+    "room-results": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
+    "checkout": {"redirect_domains": ["https://m.grandalaric.com"]},
 }
 
 
+def _widget_uri(name: str) -> str:
+    return f"ui://widget/{name}.html"
+
+
+def _widget_meta(name: str) -> dict:
+    return {"openai/widgetCSP": dict(WIDGETS[name]), "openai/widgetDomain": "https://grandalaric.com"}
+
+
 @lru_cache(maxsize=None)
-def _widget_html() -> str:
-    return (ASSETS_DIR / "room-results.html").read_text(encoding="utf-8")
+def _widget_html(name: str) -> str:
+    return (ASSETS_DIR / f"{name}.html").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +124,10 @@ mcp = FastMCP(
         "For bundle deals, use check_packages then check_room_packages. "
         "Use list_nationalities to resolve the guest's nationality code. "
         "Once the user picks a room or package and provides guest details (name, "
-        "email, phone, nationality), use create_order to place the booking, then "
-        "give them the payment link from the response to complete payment."
+        "email, phone, nationality), use create_order to place the booking. The "
+        "booking result renders a 'Complete payment' button in the widget — tell the "
+        "user to tap it. NEVER write the payment URL as text; retyping its token "
+        "corrupts the link and breaks checkout."
     ),
     **_transport_security_kwargs(),
 )
@@ -130,18 +137,21 @@ mcp = FastMCP(
 # Widgets (Apps SDK UI rendered inside ChatGPT)
 # ---------------------------------------------------------------------------
 
-WIDGET_URI = "ui://widget/room-results.html"
-
-
-@mcp.resource(WIDGET_URI, mime_type=WIDGET_MIME, meta=WIDGET_CSP_META)
+@mcp.resource(_widget_uri("room-results"), mime_type=WIDGET_MIME, meta=_widget_meta("room-results"))
 def room_results_widget() -> str:
     """HTML shell for the room-results widget (rendered by check_availability)."""
-    return _widget_html()
+    return _widget_html("room-results")
+
+
+@mcp.resource(_widget_uri("checkout"), mime_type=WIDGET_MIME, meta=_widget_meta("checkout"))
+def checkout_widget() -> str:
+    """HTML shell for the checkout widget (rendered by create_order)."""
+    return _widget_html("checkout")
 
 
 # ChatGPT reads a widget's CSP/domain config from the resource *template*, not the
 # concrete resource. FastMCP only auto-creates templates for parameterized URIs, so
-# register this static widget as a template explicitly (mirrors the pizzaz example).
+# register each static widget as a template explicitly (mirrors the pizzaz example).
 import mcp.types as _types  # noqa: E402
 
 
@@ -149,13 +159,13 @@ import mcp.types as _types  # noqa: E402
 async def _list_widget_templates() -> list[_types.ResourceTemplate]:
     return [
         _types.ResourceTemplate(
-            uriTemplate=WIDGET_URI,
-            name="room-results",
-            title="Room results",
-            description="Available room cards for check_availability.",
+            uriTemplate=_widget_uri(name),
+            name=name,
+            title=name.replace("-", " ").title(),
             mimeType=WIDGET_MIME,
-            _meta={**WIDGET_CSP_META, "openai/outputTemplate": WIDGET_URI},
+            _meta={**_widget_meta(name), "openai/outputTemplate": _widget_uri(name)},
         )
+        for name in WIDGETS
     ]
 
 
@@ -272,7 +282,15 @@ async def list_nationalities() -> str:
     return await _api("GET", "/nationality")
 
 
-@mcp.tool()
+@mcp.tool(
+    meta={
+        "openai/outputTemplate": _widget_uri("checkout"),
+        "openai/toolInvocation/invoking": "Placing your booking…",
+        "openai/toolInvocation/invoked": "Booking created",
+        "openai/widgetAccessible": True,
+    },
+    structured_output=True,  # emit structuredContent so the checkout widget gets the exact URL
+)
 async def create_order(
     hotel_id: str,
     check_in_date: str,
@@ -287,12 +305,16 @@ async def create_order(
     salutation: int = 3,
     guests: int = 2,
     promocode: str = "",
-) -> str:
+) -> dict[str, Any]:
     """
     Place a reservation. Call ONLY after the user has confirmed the room/package and
     all guest details. Pass EITHER room_id (a plain room, from check_availability) OR
-    package_id + package_code (a package, from check_room_packages). Returns the order
-    result, including a payment link to send the guest to.
+    package_id + package_code (a package, from check_room_packages).
+
+    IMPORTANT: the response contains a payment URL with a long signed token. DO NOT
+    write, paste, or retype that URL in your reply — retyping corrupts the token and
+    breaks checkout. The link is rendered as a "Complete payment" button in the widget;
+    simply tell the user to tap that button to pay.
 
     Args:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
@@ -312,18 +334,25 @@ async def create_order(
     try:
         check_in, check_out = _stay_dates(check_in_date, check_out_date)
     except ValueError as exc:
-        return _err(str(exc))
+        return {"error": str(exc)}
 
     if not room_id and not package_id:
-        return _err("Provide either room_id (from check_availability) or package_id (from check_room_packages).")
+        return {"error": "Provide either room_id (from check_availability) or package_id (from check_room_packages)."}
 
     selection = {"package_code": package_code, "package_id": package_id} if package_id else {"room_id": room_id}
     order = _stay_body(hotel_id, check_in, check_out, guests, **selection, promocode=promocode,
                        guest={"salutation": salutation, "nation_code": nation_code,
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
     logger.info("create_order hotel=%s room=%s package=%s guest=%r", hotel_id, room_id, package_id, guest_name)
-    # passthrough — the payment/confirmation link is in this response.
-    return await _api("POST", "/orders", order)
+    raw = await _api("POST", "/orders", order)
+    try:
+        result = json.loads(raw)  # {"success", "tracking_id", "url"} → structuredContent
+    except json.JSONDecodeError:
+        return {"error": raw}
+    # echo booking essentials so the widget can show a summary (the API response omits them)
+    result["booking"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
+                         "check_out": check_out.isoformat(), "guest_name": guest_name}
+    return result
 
 
 if __name__ == "__main__":
