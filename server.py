@@ -210,6 +210,15 @@ async def search_hotels(location: str) -> dict[str, Any]:
         result = json.loads(raw)  # {"success": ..., "hotels": [...]} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
+    # Find the best match for the location query. Check hotel_name and hotel_id
+    # case-insensitively; fall back to the first hotel if nothing matches.
+    needle = location.lower()
+    hotels = result.get("hotels", [])
+    match = next(
+        (h for h in hotels if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()),
+        hotels[0] if hotels else None,
+    )
+    result["hotel"] = match
     result["query"] = {"location": location}
     return result
 
