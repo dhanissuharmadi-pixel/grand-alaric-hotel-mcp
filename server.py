@@ -1,9 +1,11 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+import html
 import httpx
 import json
 import logging
 import os
+import re
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -87,6 +89,56 @@ def _stay_body(hotel_id: str, check_in: date, check_out: date, guests: int, **ex
     """Request body shared by /rooms, /package, /room-packages (and /orders)."""
     return {"hotel_id": hotel_id, "checkin": check_in.isoformat(), "checkout": check_out.isoformat(),
             "adult": guests, "child": 0, "promocode": "", **extra}
+
+
+# Map a facility name to one of the hotel-details widget's built-in SVG icon names
+# (the API gives PNG icon URLs the widget can't use). Unmatched → "check".
+_FACILITY_ICONS = {
+    "wifi": "wifi", "wi-fi": "wifi", "lan": "wifi", "internet": "wifi",
+    "pool": "pool", "park": "parking", "valet": "parking",
+    "gym": "gym", "fitness": "gym", "spa": "spa", "massage": "spa",
+    "restaurant": "restaurant", "coffee": "restaurant",
+    "breakfast": "breakfast", "welcome drink": "breakfast",
+    "bar": "bar", "air conditioning": "ac",
+}
+
+
+def _facility_icon(name: str) -> str:
+    n = name.lower()
+    return next((icon for kw, icon in _FACILITY_ICONS.items() if kw in n), "check")
+
+
+def _strip_html(value: str) -> str:
+    """The API's hotel_description is HTML; the widget renders plain text."""
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+
+
+def _normalize_hotel(base: dict, info: dict) -> dict:
+    """Shape a /hotel/info `hotel` object into the keys the hotel-details widget reads,
+    merged over the base id/name/phone from /hotels. Keeps the widget stable as the
+    backend's field names differ (rating→star_rating, facilities→amenities, etc.)."""
+    h = {**base, "hotel_name": info.get("hotel_name", base.get("hotel_name"))}
+    if info.get("rating") is not None:
+        h["star_rating"] = info["rating"]
+    addr = ", ".join(p for p in (info.get("hotel_address"), info.get("hotel_city_name"),
+                                 info.get("hotel_state")) if p)
+    if addr:
+        h["address"] = addr
+    if info.get("hotel_description"):
+        h["description"] = _strip_html(info["hotel_description"])
+    if info.get("images"):
+        h["gallery"] = info["images"]
+    if info.get("facilities"):
+        h["amenities"] = [{"label": f["name"], "icon": _facility_icon(f["name"]), "available": True}
+                          for f in info["facilities"] if f.get("name")]
+    if info.get("attraction"):
+        h["nearby"] = [{"label": a["name"], "distance": a.get("distance")}
+                       for a in info["attraction"] if a.get("name")]
+    policies = {k: v[:5] for k, v in (("check_in", info.get("checkintime")),
+                                      ("check_out", info.get("checkouttime"))) if v}
+    if policies:
+        h["policies"] = policies
+    return h
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
@@ -220,6 +272,18 @@ async def search_hotels(location: str) -> dict[str, Any]:
     )
     result["hotel"] = match
     result["query"] = {"location": location}
+    # /hotels only returns id/name/phone. Enrich the matched hotel with rich details
+    # (stars, address, description, amenities, gallery, location, policies) from
+    # /hotel/info so the hotel-details widget can render the full card.
+    if match and match.get("hotel_id"):
+        info_raw = await _api("POST", "/hotel/info", {"id": match["hotel_id"].lower()})
+        try:
+            info = json.loads(info_raw)
+        except json.JSONDecodeError:
+            info = None
+        detail = info.get("hotel") if isinstance(info, dict) else None
+        if isinstance(detail, dict):
+            result["hotel"] = _normalize_hotel(match, detail)
     return result
 
 
