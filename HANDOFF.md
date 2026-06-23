@@ -6,7 +6,7 @@
 ## What this project is
 
 A FastMCP server (Python) that exposes the Grand Alaric Hotel (Bandung, Indonesia)
-booking backend as MCP tools, **plus two ChatGPT Apps SDK widgets** that render
+booking backend as MCP tools, **plus three ChatGPT Apps SDK widgets** that render
 inline in ChatGPT. Public GitHub repo. Deployed by a senior at `mcp.grandalaric.com`.
 
 The backend lives at `https://api6.alarichotels.com/webapi/chatgpt`. `server.py`
@@ -14,15 +14,15 @@ proxies it, authenticating with header `phm-chat-api-key: $GRAND_ALARIC_API_KEY`
 
 ## Current status (as of this handoff)
 
-- ✅ Widgets built, wired, and polished. Merged to `main`, pushed.
+- ✅ All three widgets confirmed working end-to-end in ChatGPT via ngrok.
 - ✅ Original price strikethrough on discounted rooms (derived server-side from room ID pattern).
-- ✅ `splitName()` moved to server.py — widgets receive pre-parsed `room_name` + `room_name_sub`.
-- ✅ Dev preview files deleted (were committed artifacts; no longer needed).
+- ✅ `search_hotels` enriched via `/hotel/info` — hotel-details widget shows gallery, amenities, policies.
+- ✅ `hotel-details` widget added (search_hotels), `room-results` carousel rebuilt with native scroll snap.
+- ✅ Tool annotations added for app submission compliance.
+- ✅ `.env` must exist locally (gitignored) with `GRAND_ALARIC_API_KEY` — see "Running locally" below.
 - ⏳ **Senior must:** pull latest `main`, redeploy, set env `MCP_ALLOWED_HOSTS=mcp.grandalaric.com`, restart.
   Until then `https://mcp.grandalaric.com/mcp` returns **421 Misdirected Request** (DNS-rebinding guard).
-- ⏳ **User must:** connect ChatGPT to `https://mcp.grandalaric.com/mcp` once senior confirms.
-- 🔜 **Widget rewrite (next):** rebuild `room-results` as an Embla carousel using `@openai/apps-sdk-ui`.
-  See "Planned widget rewrite" section below.
+- 🔜 **UI polish + new features next** (see "Next" section).
 - 🔜 **Production (deferred):** authentication + OpenAI app submission. Required for *consistent* write
   actions — see "Known platform limitation" below.
 
@@ -51,11 +51,12 @@ ChatGPT  ──MCP (streamable-HTTP, /mcp)──▶  server.py  ──REST + phm
 4. Widget CSP keys are **snake_case** (`resource_domains`, `redirect_domains`, `connect_domains`).
    camelCase is rejected by OpenAI's validator. `openai/widgetDomain` is required for submission.
 
-## The two widgets
+## The three widgets
 
 | Widget | Tool | What it shows |
 |---|---|---|
-| `room-results` | `check_availability` | Card list of rooms (image, name+subtitle, IDR price, strikethrough original price if discounted). CSP allows hotel image domains. |
+| `hotel-details` | `search_hotels` | Gallery grid, star rating, address, description, amenities, map + nearby, policies. Footer CTA "View rooms" fires sendFollowup → check_availability. |
+| `room-results` | `check_availability` | Native scroll-snap carousel of rooms (image, name+subtitle, IDR price, strikethrough original price if discounted). "Book this room" fires sendFollowup → create_order. |
 | `checkout` | `create_order` | "Complete payment" button that opens the payment URL via `window.openai.openExternal`. CSP `redirect_domains` allows `m.grandalaric.com`. |
 
 Source: `widgets/src/*.jsx`. Shared host-state hook: `widgets/src/openai.js`.
@@ -98,6 +99,27 @@ On an **unauthenticated dev-mode connector**, OpenAI gates WRITE actions at the 
 READS (`check_availability`) work reliably; `create_order` is **inconsistent** (sometimes "blocked by
 safety checks"). This is OpenAI's behavior, confirmed by ChatGPT itself. Resolution = auth + app
 submission, not a code change. Don't chase this in `server.py`.
+
+## Debugging lessons (hard-won — don't repeat)
+
+- **`.env` must exist** — `load_dotenv()` in server.py reads it. Without it, `GRAND_ALARIC_API_KEY`
+  is empty → API returns 403 → widgets render "No matching hotel found." (widget works, data doesn't).
+- **Restart after any server.py edit** — FastMCP does not hot-reload. `uv run server.py` must be
+  re-run. Stale server = old tool definitions, missing widgets, wrong output schemas.
+- **After restart, reconnect in ChatGPT** — the connector caches the old tool list. Always disconnect
+  + reconnect the MCP connector and start a fresh conversation.
+- **Cloudflare free tunnels drop SSE** — they cancel streaming connections silently. Use ngrok.
+- **ngrok free tier works fine** for MCP streamable-HTTP (POST-only, no SSE).
+- **MCP_ALLOWED_HOSTS=\* required for tunnels** — without it, FastMCP's DNS-rebinding protection
+  rejects any Host header that isn't localhost, and ChatGPT's requests come from ngrok's domain.
+- **Protocol version** — server supports `2024-11-05` through `2025-11-25`. ChatGPT negotiates
+  `2025-03-26`; structuredContent and tool meta work at all versions.
+- **tools/list is the diagnostic tool** — after a restart, curl `tools/list` and check `_meta` on
+  each tool. If `openai/outputTemplate` is missing, the widget will never render.
+
+## Next: UI polish + new features
+
+_To be filled in as work is planned. Widgets working end-to-end is the baseline._
 
 ## Planned widget rewrite — room-results carousel
 
@@ -164,13 +186,18 @@ npm run build      # builds BOTH widgets into ../assets/ (per-widget via WIDGET 
 
 ## Running the server locally
 
-```bash
-MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 MCP_ALLOWED_HOSTS='*' \
-  GRAND_ALARIC_API_KEY=<key> uv run server.py
-```
-Then expose with a tunnel (`cloudflared tunnel --url http://localhost:8000`) and point a ChatGPT
-dev connector at `<tunnel-url>/mcp`. `MCP_ALLOWED_HOSTS='*'` disables the host check for tunnels;
-in production set it to the real host (`mcp.grandalaric.com`).
+1. Create `.env` in the project root (gitignored, never commit):
+   ```
+   GRAND_ALARIC_API_KEY=<key>
+   MCP_TRANSPORT=streamable-http
+   HOST=0.0.0.0
+   MCP_ALLOWED_HOSTS=*
+   ```
+2. Start: `uv run server.py` — picks up all vars from `.env` via `load_dotenv()`.
+3. Tunnel: `ngrok http 8000` (not Cloudflare — it drops SSE).
+4. In ChatGPT: add connector at `https://<ngrok-url>/mcp`.
+
+`MCP_ALLOWED_HOSTS='*'` disables the host check for tunnels; in production set it to the real host (`mcp.grandalaric.com`).
 
 ## Env / config knobs
 
