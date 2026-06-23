@@ -220,13 +220,29 @@ async def check_availability(
         result = json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
-    # Split "Superior City View - Book Direct & Save More" into name + subtitle so
-    # widgets receive clean fields instead of parsing the separator themselves.
-    for room in result.get("rooms", []):
+    rooms = result.get("rooms", [])
+    # Split "Superior City View - Book Direct & Save More" into name + subtitle.
+    for room in rooms:
         parts = (room.get("room_name") or "Room").split(" - ", 1)
         room["room_name"] = parts[0]
         if len(parts) > 1:
             room["room_name_sub"] = parts[1]
+    # Derive original_price for discounted rooms. Room IDs follow the pattern:
+    # base → "{type}-{ROO|BAR}", discounted → "{type}-{dealcode}{ROO|BAR}".
+    # Match each discounted room to its base variant to get the pre-discount price.
+    base_prices: dict[tuple[str, str], int] = {}
+    for room in rooms:
+        parts = room.get("room_id", "").split("-", 1)
+        if len(parts) == 2 and parts[1] in ("ROO", "BAR"):
+            base_prices[(parts[0], parts[1])] = room["price"]
+    for room in rooms:
+        parts = room.get("room_id", "").split("-", 1)
+        if len(parts) == 2 and parts[1] not in ("ROO", "BAR"):
+            meal = parts[1][-3:]
+            if meal in ("ROO", "BAR"):
+                original = base_prices.get((parts[0], meal))
+                if original and original > room["price"]:
+                    room["original_price"] = original
     return result
 
 

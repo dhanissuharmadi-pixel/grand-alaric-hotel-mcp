@@ -32,6 +32,11 @@ function RoomCard({ room }) {
         )}
       </div>
       <div className="shrink-0 text-right">
+        {room.original_price && (
+          <div className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500 line-through">
+            {idr.format(room.original_price)}
+          </div>
+        )}
         <div className="font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
           {idr.format(room.price)}
         </div>
