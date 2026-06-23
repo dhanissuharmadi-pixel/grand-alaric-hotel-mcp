@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "WIDGET=room-results vite build && WIDGET=checkout vite build"
+    "build": "WIDGET=room-results vite build && WIDGET=checkout vite build && WIDGET=hotel-details vite build"
   },
   "dependencies": {
+    "@openai/apps-sdk-ui": "^0.2.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

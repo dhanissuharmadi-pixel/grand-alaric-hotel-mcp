@@ -34,10 +34,12 @@ WIDGET_MIME = "text/html+skybridge"
 
 # The widget iframe enforces a CSP; external hosts must be allowlisted or they're
 # silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
-# Each widget declares only the domains it needs: room-results loads images from the
-# grand-alaric CDN; checkout opens the payment page via openExternal (redirect_domains).
+# Each widget declares only the domains it needs: room-results and hotel-details load
+# images (gallery, map) from the grand-alaric CDN; checkout opens the payment page via
+# openExternal (redirect_domains).
 WIDGETS = {
     "room-results": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
+    "hotel-details": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
     "checkout": {"redirect_domains": ["https://m.grandalaric.com"]},
 }
 
@@ -119,7 +121,8 @@ mcp = FastMCP(
     "Grand Alaric Hotel Assistant",
     instructions=(
         "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
-        "Use search_hotels to find properties by location. "
+        "Use search_hotels to find a property by location; it renders a details card "
+        "with a 'View rooms' button — tell the user to tap it to see rooms and rates. "
         "Use check_availability to see room types and rates for specific dates. "
         "For bundle deals, use check_packages then check_room_packages. "
         "Use list_nationalities to resolve the guest's nationality code. "
@@ -141,6 +144,12 @@ mcp = FastMCP(
 def room_results_widget() -> str:
     """HTML shell for the room-results widget (rendered by check_availability)."""
     return _widget_html("room-results")
+
+
+@mcp.resource(_widget_uri("hotel-details"), mime_type=WIDGET_MIME, meta=_widget_meta("hotel-details"))
+def hotel_details_widget() -> str:
+    """HTML shell for the hotel-details widget (rendered by search_hotels)."""
+    return _widget_html("hotel-details")
 
 
 @mcp.resource(_widget_uri("checkout"), mime_type=WIDGET_MIME, meta=_widget_meta("checkout"))
@@ -173,16 +182,35 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
 # Tools
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-async def search_hotels(location: str) -> str:
+@mcp.tool(
+    meta={
+        "openai/outputTemplate": _widget_uri("hotel-details"),
+        "openai/toolInvocation/invoking": "Finding the property…",
+        "openai/toolInvocation/invoked": "Found the property",
+        "openai/widgetAccessible": True,
+    },
+    structured_output=True,  # emit structuredContent so the hotel-details widget can render
+)
+async def search_hotels(location: str) -> dict[str, Any]:
     """
-    List Grand Alaric properties (then pick the one matching the user's location).
+    Find the Grand Alaric property matching the user's location and show its details.
+
+    The result renders a hotel-details card (gallery, amenities, location, policies)
+    with a 'View rooms' button — tell the user to tap it to see rooms and rates (it
+    triggers check_availability). The widget reads a single `hotel` object; the API's
+    `hotels` list is passed through and the widget shows the first/best match.
 
     Args:
         location: City, area, or keyword (e.g. 'Bandung', 'Dago', 'Indonesia').
     """
     logger.info("search_hotels location=%r", location)
-    return await _api("GET", "/hotels")
+    raw = await _api("GET", "/hotels")
+    try:
+        result = json.loads(raw)  # {"success": ..., "hotels": [...]} → structuredContent
+    except json.JSONDecodeError:
+        return {"error": raw}
+    result["query"] = {"location": location}
+    return result
 
 
 @mcp.tool(
@@ -243,6 +271,11 @@ async def check_availability(
                 original = base_prices.get((parts[0], meal))
                 if original and original > room["price"]:
                     room["original_price"] = original
+    # echo the query so the room-results widget can build an unambiguous "book this
+    # room" message (room_id + hotel + dates) for the model. Mirrors create_order's
+    # "booking" echo — the API response itself omits these.
+    result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
+                       "check_out": check_out.isoformat(), "guests": guests}
     return result
 
 
