@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useRef } from "react";
+import { ChevronLeft, ChevronRight } from "@openai/apps-sdk-ui/components/Icon";
 import { useOpenAiGlobal, sendFollowup } from "./openai.js";
 import "./index.css";
 
@@ -26,6 +27,7 @@ function bookRoom(room, query) {
 }
 
 function Arrow({ side, onClick }) {
+  const Chevron = side === "left" ? ChevronLeft : ChevronRight;
   return (
     <button
       type="button"
@@ -33,9 +35,7 @@ function Arrow({ side, onClick }) {
       aria-label={side === "left" ? "Scroll left" : "Scroll right"}
       className={`hidden md:flex absolute top-16 z-10 w-9 h-9 items-center justify-center rounded-full border border-black/10 dark:border-white/15 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-sm hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${side === "left" ? "left-2" : "right-2"}`}
     >
-      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        {side === "left" ? <path d="m15 18-6-6 6-6" /> : <path d="m9 18 6-6-6-6" />}
-      </svg>
+      <Chevron className="w-5 h-5" aria-hidden="true" />
     </button>
   );
 }

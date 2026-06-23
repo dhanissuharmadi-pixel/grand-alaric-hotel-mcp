@@ -1,23 +1,7 @@
 import { createRoot } from "react-dom/client";
+import { Check } from "@openai/apps-sdk-ui/components/Icon";
 import { useOpenAiGlobal } from "./openai.js";
 import "./index.css";
-
-function CheckIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="w-5 h-5 text-neutral-400 dark:text-neutral-500 shrink-0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
 
 function App() {
   const out = useOpenAiGlobal("toolOutput");
@@ -45,7 +29,7 @@ function App() {
         {url ? (
           <>
             <div className="flex items-center gap-2">
-              <CheckIcon />
+              <Check className="w-5 h-5 text-neutral-400 dark:text-neutral-500 shrink-0" aria-hidden="true" />
               <div className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-neutral-100">
                 Booking ready
               </div>
