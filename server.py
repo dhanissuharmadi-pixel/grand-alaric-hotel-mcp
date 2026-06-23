@@ -217,9 +217,17 @@ async def check_availability(
     logger.info("check_availability hotel=%s %s→%s guests=%d", hotel_id, check_in_date, check_out_date, guests)
     raw = await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
     try:
-        return json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
+        result = json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
+    # Split "Superior City View - Book Direct & Save More" into name + subtitle so
+    # widgets receive clean fields instead of parsing the separator themselves.
+    for room in result.get("rooms", []):
+        parts = (room.get("room_name") or "Room").split(" - ", 1)
+        room["room_name"] = parts[0]
+        if len(parts) > 1:
+            room["room_name_sub"] = parts[1]
+    return result
 
 
 @mcp.tool()

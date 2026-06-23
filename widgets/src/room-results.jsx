@@ -8,22 +8,14 @@ const idr = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-// Room names often carry a marketing suffix ("Superior City View - Book Direct &
-// Save More"); split it so the room type reads clean and the offer is a subtitle.
-function splitName(name) {
-  const [main, ...rest] = (name || "Room").split(" - ");
-  return { main, sub: rest.join(" - ") };
-}
-
 function RoomCard({ room }) {
-  const { main, sub } = splitName(room.room_name);
   return (
     <div className="flex items-center gap-4 px-2 py-3 -mx-2 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-200">
       <div className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl overflow-hidden bg-black/5 dark:bg-white/10">
         {room.room_image && (
           <img
             src={room.room_image}
-            alt={main}
+            alt={room.room_name}
             loading="lazy"
             className="w-full h-full object-cover"
           />
@@ -31,11 +23,11 @@ function RoomCard({ room }) {
       </div>
       <div className="min-w-0 flex-auto">
         <div className="font-medium leading-snug text-neutral-900 dark:text-neutral-100 line-clamp-2">
-          {main}
+          {room.room_name}
         </div>
-        {sub && (
+        {room.room_name_sub && (
           <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-            {sub}
+            {room.room_name_sub}
           </div>
         )}
       </div>
