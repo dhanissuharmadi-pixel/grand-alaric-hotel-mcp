@@ -189,7 +189,8 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
         "openai/toolInvocation/invoked": "Found the property",
         "openai/widgetAccessible": True,
     },
-    structured_output=True,  # emit structuredContent so the hotel-details widget can render
+    annotations={"readOnlyHint": True},
+    structured_output=True,
 )
 async def search_hotels(location: str) -> dict[str, Any]:
     """
@@ -220,7 +221,8 @@ async def search_hotels(location: str) -> dict[str, Any]:
         "openai/toolInvocation/invoked": "Found available rooms",
         "openai/widgetAccessible": True,
     },
-    structured_output=True,  # emit structuredContent so the widget can read window.openai.toolOutput
+    annotations={"readOnlyHint": True},
+    structured_output=True,
 )
 async def check_availability(
     hotel_id: str,
@@ -279,7 +281,7 @@ async def check_availability(
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def check_packages(
     hotel_id: str,
     check_in_date: str,
@@ -304,7 +306,7 @@ async def check_packages(
     return await _api("POST", "/package", _stay_body(hotel_id, check_in, check_out, guests))
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def check_room_packages(
     hotel_id: str,
     check_in_date: str,
@@ -332,7 +334,7 @@ async def check_room_packages(
                       _stay_body(hotel_id, check_in, check_out, guests, package_code=package_code))
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 async def list_nationalities() -> str:
     """List valid nationality codes and phone codes for use in create_order."""
     logger.info("list_nationalities")
@@ -346,7 +348,8 @@ async def list_nationalities() -> str:
         "openai/toolInvocation/invoked": "Booking created",
         "openai/widgetAccessible": True,
     },
-    structured_output=True,  # emit structuredContent so the checkout widget gets the exact URL
+    annotations={"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
+    structured_output=True,
 )
 async def create_order(
     hotel_id: str,
