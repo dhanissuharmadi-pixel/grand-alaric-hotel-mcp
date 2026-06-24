@@ -26,6 +26,11 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://api6.alarichotels.com/webapi/c
 API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")
 API_KEY_HEADER = "phm-chat-api-key"
 
+# Google Static Maps key for the hotel-details Location thumbnail. Read from env (never
+# committed — the repo is public). Embedded in the static-map image URL the widget loads,
+# so restrict this key by HTTP referrer + to the Maps Static API in Google Cloud Console.
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
 # a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
 MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
@@ -41,7 +46,7 @@ WIDGET_MIME = "text/html+skybridge"
 # openExternal (redirect_domains).
 WIDGETS = {
     "room-results": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
-    "hotel-details": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
+    "hotel-details": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com", "https://maps.googleapis.com"]},
     "checkout": {"redirect_domains": ["https://m.grandalaric.com"]},
 }
 
@@ -134,6 +139,11 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if info.get("attraction"):
         h["nearby"] = [{"label": a["name"], "distance": a.get("distance")}
                        for a in info["attraction"] if a.get("name")]
+    lat, lng = info.get("hotel_loc_lat"), info.get("hotel_loc_long")
+    if lat and lng and GOOGLE_MAPS_API_KEY:
+        # Static map centered on the hotel; the widget overlays its own pin at center.
+        h["map_image"] = (f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lng}"
+                          f"&zoom=15&size=640x160&scale=2&key={GOOGLE_MAPS_API_KEY}")
     policies = {k: v[:5] for k, v in (("check_in", info.get("checkintime")),
                                       ("check_out", info.get("checkouttime"))) if v}
     if policies:
