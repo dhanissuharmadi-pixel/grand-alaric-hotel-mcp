@@ -1,106 +1,82 @@
 import { createRoot } from "react-dom/client";
-import { useRef } from "react";
-import { ChevronLeft, ChevronRight } from "@openai/apps-sdk-ui/components/Icon";
-import { useOpenAiGlobal, sendFollowup } from "./openai.js";
+import { useState } from "react";
+import { useOpenAiGlobal, callTool } from "./openai.js";
+import { HotelCards } from "./views/HotelCards.jsx";
+import { HotelDetail } from "./views/HotelDetail.jsx";
+import { RoomList } from "./views/RoomList.jsx";
+import { EnhanceStay } from "./views/EnhanceStay.jsx";
+import { GuestForm } from "./views/GuestForm.jsx";
+import { Calendar } from "./views/Calendar.jsx";
 import "./index.css";
 
-const idr = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
+// Unified hotel + booking flow (rendered by search_hotels). Every step runs in-widget
+// via callTool — no model turn — so screens appear instantly:
+//   list → details → dates → rooms (qty) → enhance → guest → pay (create_order).
+// Multi-room: create_order takes one room_id, so Pay books the first selected rate;
+// true multi-room needs API support. Pay is a write — gated on unauthenticated connectors.
 
-function Star() {
+function normNationalities(x) {
+  if (Array.isArray(x)) return x;
+  return x?.nationalities ?? x?.data ?? x?.list ?? [];
+}
+
+function Spinner() {
   return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-amber-500" fill="currentColor" aria-hidden="true">
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />
-    </svg>
-  );
-}
-
-function Pin() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
-
-// Both actions hand off to the model: "Hotel details" → get_hotel_details (details
-// card), "View rooms" → check_availability (room list). The widget calls no tools itself.
-function showDetails(hotel) {
-  sendFollowup(`Show me the details for ${hotel.hotel_name ?? "this hotel"}${hotel.hotel_id ? ` (hotel ${hotel.hotel_id})` : ""}.`);
-}
-function viewRooms(hotel) {
-  sendFollowup(
-    `I'd like to see the rooms at ${hotel.hotel_name ?? "this hotel"}${hotel.hotel_id ? ` (hotel ${hotel.hotel_id})` : ""}. ` +
-      `Please check availability.`,
-  );
-}
-
-function HotelCard({ hotel }) {
-  const rating = Number(hotel.star_rating ?? hotel.stars ?? 0);
-  const priceFrom = hotel.price_from ?? hotel.from_price;
-  return (
-    <div className="flex w-[260px] flex-none snap-start flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
-      <div className="h-40 bg-black/5 dark:bg-white/10">
-        {hotel.image && <img src={hotel.image} alt={hotel.hotel_name} loading="lazy" className="h-full w-full object-cover" />}
-      </div>
-      <div className="flex flex-auto flex-col p-3.5">
-        {rating > 0 && (
-          <div className="flex items-center gap-0.5">
-            {Array.from({ length: rating }, (_, i) => (
-              <Star key={i} />
-            ))}
-          </div>
-        )}
-        <h3 className="mt-2 text-[15px] font-medium leading-snug text-neutral-900 dark:text-neutral-100">{hotel.hotel_name}</h3>
-        {hotel.area && (
-          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-            <Pin />
-            <span className="truncate">{hotel.area}</span>
-          </div>
-        )}
-        <div className="mt-auto pt-3.5">
-          <button
-            type="button"
-            onClick={() => showDetails(hotel)}
-            className="mb-1.5 block text-[12.5px] font-medium text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
-          >
-            Hotel details →
-          </button>
-          {priceFrom != null && (
-            <div className="flex items-baseline gap-1">
-              <span className="text-[11px] text-neutral-500 dark:text-neutral-400">From</span>
-              <span className="text-[17px] font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(priceFrom)}</span>
-              <span className="text-[11px] text-neutral-500 dark:text-neutral-400">/ night</span>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => viewRooms(hotel)}
-            className="mt-3 w-full rounded-xl bg-neutral-900 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
-          >
-            View rooms
-          </button>
-        </div>
-      </div>
+    <div className="flex items-center justify-center py-16">
+      <svg className="h-6 w-6 animate-spin text-neutral-400" viewBox="0 0 24 24" fill="none" aria-label="Loading">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.4 0 0 5.4 0 12h4z" />
+      </svg>
     </div>
   );
 }
 
-function NavButton({ side, onClick }) {
-  const Chevron = side === "left" ? ChevronLeft : ChevronRight;
+function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack, loading, error }) {
+  const hint = !checkin ? "Select a check-in date" : !checkout ? "Now select a check-out date" : `${checkin} → ${checkout}`;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={side === "left" ? "Previous" : "Next"}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 dark:border-white/15 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-    >
-      <Chevron className="h-5 w-5" aria-hidden="true" />
-    </button>
+    <div className="mx-auto w-full max-w-[640px] text-neutral-900 dark:text-neutral-100">
+      <div className="mb-4 flex items-center gap-2">
+        <button type="button" onClick={onBack} aria-label="Back" className="-ml-1 flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10">
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        </button>
+        <div className="min-w-0">
+          <div className="text-base font-semibold">When are you staying?</div>
+          {hotelName && <div className="truncate text-[13px] text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+        </div>
+      </div>
+
+      <Calendar value={{ checkin, checkout }} onChange={(v) => { set.checkin(v.checkin); set.checkout(v.checkout); }} />
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-[13px] font-medium text-neutral-600 dark:text-neutral-300">{hint}</span>
+        <label className="flex items-center gap-2 text-[13px] font-medium text-neutral-700 dark:text-neutral-300">
+          Guests
+          <div className="flex items-center overflow-hidden rounded-xl border border-black/10 dark:border-white/15">
+            <button type="button" aria-label="Fewer guests" onClick={() => set.guests(Math.max(1, guests - 1))} className="h-9 w-10 text-lg text-neutral-900 dark:text-neutral-100">−</button>
+            <span className="min-w-7 text-center text-sm font-semibold tabular-nums">{guests}</span>
+            <button type="button" aria-label="More guests" onClick={() => set.guests(guests + 1)} className="h-9 w-10 text-lg text-neutral-900 dark:text-neutral-100">+</button>
+          </div>
+        </label>
+      </div>
+
+      {error && <div className="mt-3 text-[13px] text-red-600 dark:text-red-400">{error}</div>}
+      <button type="button" onClick={onSubmit} disabled={loading || !checkin || !checkout} className="mt-4 h-11 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
+        {loading ? "Checking…" : "See rooms"}
+      </button>
+    </div>
+  );
+}
+
+function Done({ url, hotelName }) {
+  return (
+    <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
+      <div className="text-lg font-semibold">Booking ready</div>
+      {hotelName && <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+      <button type="button" onClick={() => window.openai?.openExternal?.({ href: url })} className="mt-4 h-12 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
+        Complete payment
+      </button>
+      <div className="mt-2 text-center text-xs text-neutral-400 dark:text-neutral-500">Opens the secure Grand Alaric checkout.</div>
+    </div>
   );
 }
 
@@ -109,42 +85,120 @@ function App() {
   const theme = useOpenAiGlobal("theme");
   const hotels = out?.hotels ?? [];
   const location = out?.query?.location;
-  const scroller = useRef(null);
-  const scroll = (dx) => scroller.current?.scrollBy({ left: dx, behavior: "smooth" });
+
+  const [view, setView] = useState("list"); // list | details | dates | rooms | enhance | guest | done
+  const [hotel, setHotel] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [rooms, setRooms] = useState(null);
+  const [roomQuery, setRoomQuery] = useState(null);
+  const [selections, setSelections] = useState([]);
+  const [availableExtras, setAvailableExtras] = useState([]);
+  const [extras, setExtras] = useState([]);
+  const [nationalities, setNationalities] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [paying, setPaying] = useState(false);
+  const [payUrl, setPayUrl] = useState(null);
+  const [checkin, setCheckin] = useState("");
+  const [checkout, setCheckout] = useState("");
+  const [guests, setGuests] = useState(out?.query?.guests ?? 2);
+
+  const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
+
+  const openDetails = async (h) => {
+    setHotel(h);
+    setDetail(null);
+    setError(null);
+    setView("details");
+    setLoading(true);
+    const data = await callTool("get_hotel_details", { hotel_id: h.hotel_id });
+    setDetail(data?.hotel ?? { hotel_name: h.hotel_name, hotel_id: h.hotel_id });
+    setLoading(false);
+  };
+
+  const openDates = (h) => {
+    setHotel(h);
+    setError(null);
+    setView("dates");
+  };
+
+  const loadRooms = async () => {
+    if (!checkin || !checkout) return setError("Pick check-in and check-out dates.");
+    setError(null);
+    setLoading(true);
+    const data = await callTool("check_availability", { hotel_id: hotel.hotel_id, check_in_date: checkin, check_out_date: checkout, guests: Number(guests) });
+    setLoading(false);
+    if (!data || data.error) return setError(data?.error || "Couldn't load rooms. Please try again.");
+    setRooms(data.rooms ?? []);
+    setRoomQuery(data.query ?? null);
+    setAvailableExtras(data.extras ?? data.services ?? []); // add-ons when the API provides them
+    setView("rooms");
+  };
+
+  const continueToEnhance = async (sel) => {
+    setSelections(sel);
+    setView("enhance");
+    if (!nationalities.length) {
+      const data = await callTool("list_nationalities", {});
+      setNationalities(normNationalities(data?.nationalities ?? data));
+    }
+  };
+
+  const toggleExtra = (extra) =>
+    setExtras((cur) => (cur.some((e) => e.id === extra.id) ? cur.filter((e) => e.id !== extra.id) : [...cur, extra]));
+  const removeRoom = (roomId) => setSelections((cur) => cur.filter((r) => r.room_id !== roomId));
+
+  const pay = async (guest) => {
+    const sel = selections[0];
+    if (!sel) return setError("No room selected.");
+    setPaying(true);
+    setError(null);
+    const data = await callTool("create_order", {
+      hotel_id: roomQuery.hotel_id,
+      check_in_date: roomQuery.check_in,
+      check_out_date: roomQuery.check_out,
+      guests: roomQuery.guests ?? Number(guests),
+      room_id: sel.room_id,
+      ...guest,
+    });
+    setPaying(false);
+    if (data?.url) {
+      setPayUrl(data.url);
+      window.openai?.openExternal?.({ href: data.url });
+      setView("done");
+    } else {
+      setError(data?.error || "Couldn't create the booking. Please try again.");
+    }
+  };
+
+  let body;
+  if (view === "details") {
+    body = loading && !detail ? <Spinner /> : <HotelDetail hotel={detail} onViewRooms={() => openDates(hotel)} onBack={() => setView("list")} />;
+  } else if (view === "dates") {
+    body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={loadRooms} onBack={() => setView(detail ? "details" : "list")} loading={loading} error={error} />;
+  } else if (view === "rooms") {
+    body = (
+      <RoomList
+        rooms={rooms}
+        title={hotelName ?? "Available rooms"}
+        subtitle={roomQuery?.check_in ? `${roomQuery.check_in} → ${roomQuery.check_out}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
+        onContinue={continueToEnhance}
+        onBack={() => setView("dates")}
+      />
+    );
+  } else if (view === "enhance") {
+    body = <EnhanceStay hotelName={hotelName} query={roomQuery} selections={selections} available={availableExtras} chosen={extras} onToggleExtra={toggleExtra} onRemoveRoom={removeRoom} onContinue={() => setView("guest")} onBack={() => setView("rooms")} />;
+  } else if (view === "guest") {
+    body = <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} paying={paying} error={error} />;
+  } else if (view === "done") {
+    body = <Done url={payUrl} hotelName={hotelName} />;
+  } else {
+    body = <HotelCards hotels={hotels} location={location} onDetails={openDetails} onViewRooms={openDates} />;
+  }
 
   return (
     <div className={theme === "dark" ? "dark" : undefined}>
-      <div className="antialiased w-full text-neutral-900 dark:text-neutral-100">
-        <div className="mb-1 flex items-end justify-between gap-3 px-1">
-          <div className="min-w-0">
-            <div className="text-base font-semibold">{location ? `Hotels in ${location}` : "Hotels"}</div>
-            <div className="mt-0.5 text-[13px] text-neutral-500 dark:text-neutral-400">
-              {hotels.length} {hotels.length === 1 ? "stay" : "stays"}
-            </div>
-          </div>
-          {hotels.length > 1 && (
-            <div className="hidden shrink-0 gap-2 sm:flex">
-              <NavButton side="left" onClick={() => scroll(-276)} />
-              <NavButton side="right" onClick={() => scroll(276)} />
-            </div>
-          )}
-        </div>
-
-        {hotels.length === 0 ? (
-          <div className="py-10 text-center text-sm text-neutral-500 dark:text-neutral-400">
-            No hotels found for this search.
-          </div>
-        ) : (
-          <div
-            ref={scroller}
-            className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {hotels.map((h) => (
-              <HotelCard key={h.hotel_id} hotel={h} />
-            ))}
-          </div>
-        )}
-      </div>
+      <div className="antialiased w-full">{body}</div>
     </div>
   );
 }

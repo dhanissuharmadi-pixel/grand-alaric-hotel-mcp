@@ -471,11 +471,17 @@ async def check_room_packages(
                       _stay_body(hotel_id, check_in, check_out, guests, package_code=package_code))
 
 
-@mcp.tool(annotations={"readOnlyHint": True})
-async def list_nationalities() -> str:
-    """List valid nationality codes and phone codes for use in create_order."""
+@mcp.tool(annotations={"readOnlyHint": True}, structured_output=True)
+async def list_nationalities() -> dict[str, Any]:
+    """List valid nationality codes and phone codes (for create_order and the guest form)."""
     logger.info("list_nationalities")
-    return await _api("GET", "/nationality")
+    raw = await _api("GET", "/nationality")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"error": raw}
+    # pass through under a stable key so the guest-details widget can read it via callTool
+    return {"nationalities": data}
 
 
 @mcp.tool(

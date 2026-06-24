@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { margin: 0; padding: 24px; background: #ececec; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Mock a created booking. `url` is what create_order returns; openExternal opens it.
+      window.openai = {
+        theme: "light",
+        toolOutput: {
+          url: "https://m.grandalaric.com/pay/EXAMPLE-TOKEN",
+          booking: { guest_name: "Dhanis Suharmadi", hotel_id: "GSV", check_in: "2026-07-10", check_out: "2026-07-12" },
+        },
+        openExternal: (o) => alert("openExternal →\n\n" + o.href),
+      };
+    </script>
+    <script type="module" src="/src/checkout.jsx"></script>
+  </body>
+</html>

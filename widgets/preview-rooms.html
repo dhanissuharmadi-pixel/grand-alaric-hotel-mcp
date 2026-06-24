@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { margin: 0; padding: 24px; background: #ececec; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Flat rate rows like /rooms returns — the widget groups them by room type.
+      // The Junior Suite rate carries conditions + benefits to exercise the expand panel.
+      window.openai = {
+        theme: "light",
+        toolOutput: {
+          query: { hotel_id: "GSV", check_in: "2026-07-10", check_out: "2026-07-12", guests: 2 },
+          rooms: [
+            { room_id: "SUPK-ROO", room_name: "Superior City View", room_name_sub: "Standard rate", price: 650000, room_image: "https://picsum.photos/seed/sup/520/360" },
+            { room_id: "SUPK-IWS312ROO", room_name: "Superior City View", room_name_sub: "Book Direct & Save More", price: 520000, original_price: 650000, room_image: "https://picsum.photos/seed/sup/520/360" },
+            { room_id: "DLXK-ROO", room_name: "Deluxe King", room_name_sub: "Standard rate", price: 780000, room_image: "https://picsum.photos/seed/dlx/520/360" },
+            {
+              room_id: "JRST-EB4339BAR", room_name: "Junior Suite", room_name_sub: "Early Bird 14 Days",
+              price: 890000, original_price: 1100000, room_image: "https://picsum.photos/seed/jr/520/360",
+              conditions: [{ label: "Free cancellation until 48h before" }, { label: "Breakfast for 2 included" }],
+              benefits: [{ text: "Welcome drink on arrival" }, { text: "Late checkout (on availability)" }, { text: "10% off spa" }],
+            },
+            { room_id: "GRST-ROO", room_name: "Grand Suite", room_name_sub: "Book Direct & Save More", price: 1450000, room_image: "https://picsum.photos/seed/grand/520/360" },
+          ],
+        },
+        sendFollowUpMessage: (m) => alert("→ would send to ChatGPT:\n\n" + m.prompt),
+      };
+    </script>
+    <script type="module" src="/src/room-results.jsx"></script>
+  </body>
+</html>

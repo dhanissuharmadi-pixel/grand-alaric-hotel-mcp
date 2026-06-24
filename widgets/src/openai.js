@@ -12,6 +12,15 @@ export function useOpenAiGlobal(key) {
   );
 }
 
+// Call an MCP tool directly from the widget and return its structuredContent — no
+// model turn, no chat message. Used for instant in-widget navigation (e.g. open a
+// hotel's details or rooms without waiting for ChatGPT to call the tool). Returns null
+// if the host doesn't expose callTool (e.g. local preview without a mock).
+export async function callTool(name, args) {
+  const result = await window.openai?.callTool?.(name, args);
+  return result?.structuredContent ?? result ?? null;
+}
+
 // Send a message to ChatGPT as if the user typed it, to kick off the next step
 // of the booking flow (e.g. "show rooms" → check_availability, "book this room"
 // → create_order). The model drives the tool call; the widget never calls write
