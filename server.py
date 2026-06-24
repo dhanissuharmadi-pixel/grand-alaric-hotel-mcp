@@ -45,6 +45,7 @@ WIDGET_MIME = "text/html+skybridge"
 # images (gallery, map) from the grand-alaric CDN; checkout opens the payment page via
 # openExternal (redirect_domains).
 WIDGETS = {
+    "hotel-list": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
     "room-results": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
     "hotel-details": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com", "https://maps.googleapis.com"]},
     "checkout": {"redirect_domains": ["https://m.grandalaric.com"]},
@@ -118,6 +119,23 @@ def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
 
 
+def _list_item(base: dict, info: dict | None) -> dict:
+    """Light hotel shape for the hotel-list carousel card: name, stars, area, one image.
+    From-price isn't available here (it needs rooms + dates), so the card omits it."""
+    item = {"hotel_id": base["hotel_id"], "hotel_name": base.get("hotel_name")}
+    detail = info.get("hotel") if isinstance(info, dict) else None
+    if isinstance(detail, dict):
+        item["hotel_name"] = detail.get("hotel_name", item["hotel_name"])
+        if detail.get("rating") is not None:
+            item["star_rating"] = detail["rating"]
+        area = ", ".join(p for p in (detail.get("hotel_city_name"), detail.get("hotel_state")) if p)
+        if area:
+            item["area"] = area
+        if detail.get("images"):
+            item["image"] = detail["images"][0]
+    return item
+
+
 def _normalize_hotel(base: dict, info: dict) -> dict:
     """Shape a /hotel/info `hotel` object into the keys the hotel-details widget reads,
     merged over the base id/name/phone from /hotels. Keeps the widget stable as the
@@ -183,9 +201,10 @@ mcp = FastMCP(
     "Grand Alaric Hotel Assistant",
     instructions=(
         "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
-        "Use search_hotels to find a property by location; it renders a details card "
-        "with a 'View rooms' button — tell the user to tap it to see rooms and rates. "
-        "Use check_availability to see room types and rates for specific dates. "
+        "For a general or location search (e.g. 'hotels in Bandung'), use search_hotels "
+        "— it renders a carousel of hotel cards. For a specific named hotel's full "
+        "details, use get_hotel_details; it renders a details card with a 'View rooms' "
+        "button. Use check_availability to see room types and rates for specific dates. "
         "For bundle deals, use check_packages then check_room_packages. "
         "Use list_nationalities to resolve the guest's nationality code. "
         "Once the user picks a room or package and provides guest details (name, "
@@ -201,6 +220,12 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 # Widgets (Apps SDK UI rendered inside ChatGPT)
 # ---------------------------------------------------------------------------
+
+@mcp.resource(_widget_uri("hotel-list"), mime_type=WIDGET_MIME, meta=_widget_meta("hotel-list"))
+def hotel_list_widget() -> str:
+    """HTML shell for the hotel-list widget (rendered by search_hotels)."""
+    return _widget_html("hotel-list")
+
 
 @mcp.resource(_widget_uri("room-results"), mime_type=WIDGET_MIME, meta=_widget_meta("room-results"))
 def room_results_widget() -> str:
@@ -246,9 +271,9 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
 
 @mcp.tool(
     meta={
-        "openai/outputTemplate": _widget_uri("hotel-details"),
-        "openai/toolInvocation/invoking": "Finding the property…",
-        "openai/toolInvocation/invoked": "Found the property",
+        "openai/outputTemplate": _widget_uri("hotel-list"),
+        "openai/toolInvocation/invoking": "Searching hotels…",
+        "openai/toolInvocation/invoked": "Found hotels",
         "openai/widgetAccessible": True,
     },
     annotations={"readOnlyHint": True},
@@ -256,12 +281,11 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
 )
 async def search_hotels(location: str) -> dict[str, Any]:
     """
-    Find the Grand Alaric property matching the user's location and show its details.
+    Find Grand Alaric properties matching a location and show them as a card carousel.
 
-    The result renders a hotel-details card (gallery, amenities, location, policies)
-    with a 'View rooms' button — tell the user to tap it to see rooms and rates (it
-    triggers check_availability). The widget reads a single `hotel` object; the API's
-    `hotels` list is passed through and the widget shows the first/best match.
+    Use this for general/location searches (e.g. "hotels in Bandung"). Each card has a
+    'Hotel Details' link and a 'View Rooms' button. For a single named hotel's full
+    details card, call get_hotel_details instead.
 
     Args:
         location: City, area, or keyword (e.g. 'Bandung', 'Dago', 'Indonesia').
@@ -272,29 +296,56 @@ async def search_hotels(location: str) -> dict[str, Any]:
         result = json.loads(raw)  # {"success": ..., "hotels": [...]} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
-    # Find the best match for the location query. Check hotel_name and hotel_id
-    # case-insensitively; fall back to the first hotel if nothing matches.
+    # Keep hotels matching the location (name or id, case-insensitive); else show all.
     needle = location.lower()
     hotels = result.get("hotels", [])
-    match = next(
-        (h for h in hotels if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()),
-        hotels[0] if hotels else None,
-    )
-    result["hotel"] = match
+    matches = [h for h in hotels
+               if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()] or hotels
+    # Enrich each card with stars/area/image from /hotel/info (/hotels has only id+name+phone).
+    enriched = []
+    for h in matches:
+        info = None
+        if h.get("hotel_id"):
+            info_raw = await _api("POST", "/hotel/info", {"id": h["hotel_id"].lower()})
+            try:
+                info = json.loads(info_raw)
+            except json.JSONDecodeError:
+                info = None
+        enriched.append(_list_item(h, info))
+    result["hotels"] = enriched
     result["query"] = {"location": location}
-    # /hotels only returns id/name/phone. Enrich the matched hotel with rich details
-    # (stars, address, description, amenities, gallery, location, policies) from
-    # /hotel/info so the hotel-details widget can render the full card.
-    if match and match.get("hotel_id"):
-        info_raw = await _api("POST", "/hotel/info", {"id": match["hotel_id"].lower()})
-        try:
-            info = json.loads(info_raw)
-        except json.JSONDecodeError:
-            info = None
-        detail = info.get("hotel") if isinstance(info, dict) else None
-        if isinstance(detail, dict):
-            result["hotel"] = _normalize_hotel(match, detail)
     return result
+
+
+@mcp.tool(
+    meta={
+        "openai/outputTemplate": _widget_uri("hotel-details"),
+        "openai/toolInvocation/invoking": "Loading hotel details…",
+        "openai/toolInvocation/invoked": "Loaded hotel details",
+        "openai/widgetAccessible": True,
+    },
+    annotations={"readOnlyHint": True},
+    structured_output=True,
+)
+async def get_hotel_details(hotel_id: str) -> dict[str, Any]:
+    """
+    Show the full details card for one hotel (gallery, rating, description, amenities,
+    location/map, policies) with a 'View rooms' button. Use when the user asks about a
+    specific property, or taps 'Hotel Details' on a hotel-list card.
+
+    Args:
+        hotel_id: Property ID from search_hotels (e.g. 'GSV').
+    """
+    logger.info("get_hotel_details hotel_id=%r", hotel_id)
+    info_raw = await _api("POST", "/hotel/info", {"id": hotel_id.lower()})
+    try:
+        info = json.loads(info_raw)
+    except json.JSONDecodeError:
+        return {"error": info_raw}
+    detail = info.get("hotel") if isinstance(info, dict) else None
+    if not isinstance(detail, dict):
+        return {"error": "Hotel not found."}
+    return {"hotel": _normalize_hotel({"hotel_id": hotel_id.upper()}, detail)}
 
 
 @mcp.tool(
