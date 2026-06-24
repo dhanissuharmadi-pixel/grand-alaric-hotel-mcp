@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+import asyncio
 import html
 import httpx
 import json
@@ -301,9 +302,10 @@ async def search_hotels(location: str) -> dict[str, Any]:
     hotels = result.get("hotels", [])
     matches = [h for h in hotels
                if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()] or hotels
-    # Enrich each card with stars/area/image from /hotel/info (/hotels has only id+name+phone).
-    enriched = []
-    for h in matches:
+    # Enrich each card with stars/area/image from /hotel/info (/hotels has only id+name+
+    # phone). Fan the per-hotel calls out concurrently so latency stays flat as the
+    # catalog grows; gather preserves order.
+    async def _enrich(h: dict) -> dict:
         info = None
         if h.get("hotel_id"):
             info_raw = await _api("POST", "/hotel/info", {"id": h["hotel_id"].lower()})
@@ -311,8 +313,9 @@ async def search_hotels(location: str) -> dict[str, Any]:
                 info = json.loads(info_raw)
             except json.JSONDecodeError:
                 info = None
-        enriched.append(_list_item(h, info))
-    result["hotels"] = enriched
+        return _list_item(h, info)
+
+    result["hotels"] = list(await asyncio.gather(*(_enrich(h) for h in matches)))
     result["query"] = {"location": location}
     return result
 
