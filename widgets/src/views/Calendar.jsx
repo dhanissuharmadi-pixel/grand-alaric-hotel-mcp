@@ -31,7 +31,7 @@ function Month({ year, month, checkin, checkout, today, onPick }) {
           const inRange = ci && co && cell > ci && cell < co;
           const edge = isCi || isCo;
           return (
-            <div key={i} className={`flex justify-center ${inRange ? "bg-neutral-100 dark:bg-white/10" : ""} ${isCi ? "rounded-l-full bg-neutral-100 dark:bg-white/10" : ""} ${isCo ? "rounded-r-full bg-neutral-100 dark:bg-white/10" : ""}`}>
+            <div key={i} className={`flex justify-center ${inRange ? "bg-neutral-100 dark:bg-white/10" : ""} ${isCi && co ? "rounded-l-full bg-neutral-100 dark:bg-white/10" : ""} ${isCo ? "rounded-r-full bg-neutral-100 dark:bg-white/10" : ""}`}>
               <button
                 type="button"
                 disabled={past}

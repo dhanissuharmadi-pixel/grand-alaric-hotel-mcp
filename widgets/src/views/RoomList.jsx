@@ -32,11 +32,13 @@ function groupRooms(rooms) {
 }
 
 function Stepper({ value, onDec, onInc }) {
+  // ponytail: 1 room max — create_order books one room_id with no count, so the summary
+  // total can't exceed what's booked. Lift the cap (here + setQty) when the API takes a count.
   return (
     <div className="flex items-center overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
       <button type="button" aria-label="Decrease" onClick={onDec} disabled={value === 0} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">−</button>
       <span className="min-w-7 text-center text-sm font-semibold tabular-nums">{value}</span>
-      <button type="button" aria-label="Increase" onClick={onInc} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100">+</button>
+      <button type="button" aria-label="Increase" onClick={onInc} disabled={value >= 1} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">+</button>
     </div>
   );
 }
@@ -196,7 +198,8 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
   const [page, setPage] = useState(0);
   const [qty, setQtyState] = useState({});
   const [detail, setDetail] = useState(null);
-  const setQty = (id, n) => setQtyState((q) => ({ ...q, [id]: n }));
+  // ponytail: single-room booking — selecting a rate clears the others, capped at 1.
+  const setQty = (id, n) => setQtyState(() => (n > 0 ? { [id]: 1 } : {}));
 
   const go = (idx) => {
     const el = scroller.current;

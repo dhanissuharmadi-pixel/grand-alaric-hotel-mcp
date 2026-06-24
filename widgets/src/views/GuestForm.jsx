@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { OrderSummary } from "./OrderSummary.jsx";
 
-// Salutation codes per the API (create_order's `salutation`). Mr is the documented
-// default (3); the others are best-effort and should be confirmed against the backend.
+// ponytail: only Mr=3 is documented; Mrs/Ms codes are guessed. Confirm against the
+// backend and fix these values before relying on the title.
 const TITLES = [
   { label: "Mr.", value: 3 },
   { label: "Mrs.", value: 2 },

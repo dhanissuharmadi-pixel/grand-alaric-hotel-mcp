@@ -8,7 +8,7 @@ import "./index.css";
 function App() {
   const out = useOpenAiGlobal("toolOutput");
   const theme = useOpenAiGlobal("theme");
-  const hotel = out?.hotel ?? out?.hotels?.[0] ?? {};
+  const hotel = out?.hotel ?? {};
 
   const viewRooms = () =>
     sendFollowup(

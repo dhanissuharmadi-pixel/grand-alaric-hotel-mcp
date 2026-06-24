@@ -157,7 +157,7 @@ function App() {
       hotel_id: roomQuery.hotel_id,
       check_in_date: roomQuery.check_in,
       check_out_date: roomQuery.check_out,
-      guests: roomQuery.guests ?? Number(guests),
+      guests: roomQuery.guests ?? guests,
       room_id: sel.room_id,
       ...guest,
     });
