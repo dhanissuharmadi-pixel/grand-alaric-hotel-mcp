@@ -1,22 +1,21 @@
 import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "@openai/apps-sdk-ui/components/Icon";
-import { Caret, idr } from "./icons.jsx";
+import { Caret, Icon, idr } from "./icons.jsx";
 
 const ROOMS_PER_PAGE = 2;
 
-function Stepper({ value, onDec, onInc }) {
-  // ponytail: 1 room max — create_order books one room_id with no count, so the summary
-  // total can't exceed what's booked. Lift the cap (here + setQty) when the API takes a count.
+function Stepper({ value, onDec, onInc, canInc = true }) {
+  // `canInc` is gated by the room type's remaining availability (cart qty cap).
   return (
     <div className="flex items-center overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
       <button type="button" aria-label="Decrease" onClick={onDec} disabled={value === 0} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">−</button>
       <span className="min-w-7 text-center text-sm font-semibold tabular-nums">{value}</span>
-      <button type="button" aria-label="Increase" onClick={onInc} disabled={value >= 1} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">+</button>
+      <button type="button" aria-label="Increase" onClick={onInc} disabled={!canInc} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">+</button>
     </div>
   );
 }
 
-function Rate({ rate, qty, onInc, onDec }) {
+function Rate({ rate, qty, onInc, onDec, canInc }) {
   const [open, setOpen] = useState(false);
   const off = rate.original_price && rate.original_price > rate.price ? Math.round((1 - rate.price / rate.original_price) * 100) : 0;
   const meal = rate.meal;
@@ -51,7 +50,7 @@ function Rate({ rate, qty, onInc, onDec }) {
           ) : (
             <span />
           )}
-          <Stepper value={qty} onDec={onDec} onInc={onInc} />
+          <Stepper value={qty} onDec={onDec} onInc={onInc} canInc={canInc} />
         </div>
       </div>
       {hasDetails && open && (
@@ -80,20 +79,32 @@ function Rate({ rate, qty, onInc, onDec }) {
 }
 
 function RoomCard({ room, qty, setQty, onDetails }) {
+  // Quantity across this room type's rates can't exceed its available count.
+  const used = room.rates.reduce((s, rt) => s + (qty[rt.room_id] || 0), 0);
+  const available = room.available == null ? Infinity : Number(room.available);
+  const canInc = used < available;
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
       <button type="button" onClick={() => onDetails(room)} aria-label="View room details" className="relative block w-full">
-        <div className="aspect-[16/9] bg-black/5 dark:bg-white/10">
-          {room.image && <img src={room.image} alt={room.name} loading="lazy" className="h-full w-full object-cover" />}
+        <div className="relative aspect-[16/9] bg-black/5 dark:bg-white/10">
+          <span className="absolute inset-0 flex items-center justify-center text-neutral-300 dark:text-neutral-600"><Icon name="grid" className="h-6 w-6" /></span>
+          {room.image && <img src={room.image} alt={room.name} loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} className="relative h-full w-full object-cover" />}
         </div>
         <span className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white">View details</span>
       </button>
       <div className="p-3">
-        <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{room.name}</h3>
-        {room.meta && <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{room.name}</h3>
+            {room.meta && <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
+          </div>
+          {Number.isFinite(available) && available <= 5 && (
+            <span className="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Only {available} left</span>
+          )}
+        </div>
+        <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
           {room.rates.map((rate) => (
-            <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
+            <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} canInc={canInc} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
           ))}
         </div>
       </div>
@@ -103,6 +114,9 @@ function RoomCard({ room, qty, setQty, onDetails }) {
 
 function RoomDetail({ room, qty, setQty, onClose }) {
   const subtotal = room.rates.reduce((s, r) => s + r.price * (qty[r.room_id] || 0), 0);
+  const used = room.rates.reduce((s, rt) => s + (qty[rt.room_id] || 0), 0);
+  const available = room.available == null ? Infinity : Number(room.available);
+  const canInc = used < available;
   const facilities = room.facilities ?? [];
   const addToBooking = () => {
     if (subtotal === 0 && room.rates[0]) setQty(room.rates[0].room_id, 1);
@@ -118,8 +132,9 @@ function RoomDetail({ room, qty, setQty, onClose }) {
       </div>
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <div>
-          <div className="aspect-[16/10] overflow-hidden rounded-2xl bg-black/5 dark:bg-white/10">
-            {room.image && <img src={room.image} alt={room.name} className="h-full w-full object-cover" />}
+          <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-black/5 dark:bg-white/10">
+            <span className="absolute inset-0 flex items-center justify-center text-neutral-300 dark:text-neutral-600"><Icon name="grid" className="h-6 w-6" /></span>
+            {room.image && <img src={room.image} alt={room.name} onError={(e) => { e.currentTarget.style.display = "none"; }} className="relative h-full w-full object-cover" />}
           </div>
           {facilities.length > 0 && (
             <div className="mt-4">
@@ -137,7 +152,7 @@ function RoomDetail({ room, qty, setQty, onClose }) {
           {room.description && <p className="mt-2 text-[13px] leading-relaxed text-neutral-600 dark:text-neutral-300">{room.description}</p>}
           <div className="mt-4 flex flex-col gap-2.5">
             {room.rates.map((rate) => (
-              <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
+              <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} canInc={canInc} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
             ))}
           </div>
         </div>
@@ -162,7 +177,7 @@ function NavButton({ side, onClick, disabled }) {
 // Quantity-mode room list: each rate has a stepper; a footer shows the running total and
 // Continue → onContinue(selections, total). Tapping a card opens an in-place room-detail
 // view (image, facilities, description, rates) sharing the same quantity state.
-export function RoomList({ rooms, title = "Available rooms", subtitle, onContinue, onBack }) {
+export function RoomList({ rooms, title = "Available rooms", subtitle, onContinue, onBack, onChangeDates }) {
   const groups = rooms ?? [];
   const pages = [];
   for (let i = 0; i < groups.length; i += ROOMS_PER_PAGE) pages.push(groups.slice(i, i + ROOMS_PER_PAGE));
@@ -171,8 +186,14 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
   const [page, setPage] = useState(0);
   const [qty, setQtyState] = useState({});
   const [detail, setDetail] = useState(null);
-  // ponytail: single-room booking — selecting a rate clears the others, capped at 1.
-  const setQty = (id, n) => setQtyState(() => (n > 0 ? { [id]: 1 } : {}));
+  // Multi-room: keep a quantity per rate id. Availability is capped per room type in RoomCard.
+  const setQty = (id, n) =>
+    setQtyState((cur) => {
+      const next = { ...cur };
+      if (n > 0) next[id] = n;
+      else delete next[id];
+      return next;
+    });
 
   const go = (idx) => {
     const el = scroller.current;
@@ -208,7 +229,22 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
           )}
           <div className="min-w-0">
             <div className="truncate text-base font-semibold">{title}</div>
-            {subtitle && <div className="mt-0.5 truncate text-[13px] font-medium text-neutral-500 dark:text-neutral-400">{subtitle}</div>}
+            {subtitle &&
+              (onChangeDates || onBack ? (
+                <button
+                  type="button"
+                  onClick={onChangeDates ?? onBack}
+                  className="mt-0.5 flex max-w-full items-center gap-1.5 text-[13px] font-medium text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+                >
+                  <span className="truncate">{subtitle}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-black/10 px-2 py-0.5 text-[11px] dark:border-white/15">
+                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    Change
+                  </span>
+                </button>
+              ) : (
+                <div className="mt-0.5 truncate text-[13px] font-medium text-neutral-500 dark:text-neutral-400">{subtitle}</div>
+              ))}
           </div>
         </div>
         {pages.length > 1 && (

@@ -12,8 +12,8 @@ import "./index.css";
 // Unified hotel + booking flow (rendered by search_hotels). Every step runs in-widget
 // via callTool — no model turn — so screens appear instantly:
 //   list → details → dates → rooms (qty) → enhance → guest → pay (create_order).
-// Multi-room: create_order takes one room_id, so Pay books the first selected rate;
-// true multi-room needs API support. Pay is a write — gated on unauthenticated connectors.
+// Pay sends the full cart (rooms + quantities + chosen add-ons) to the cart-based
+// create_order. Pay is a write — gated on unauthenticated connectors.
 
 function normNationalities(x) {
   if (Array.isArray(x)) return x;
@@ -149,8 +149,7 @@ function App() {
   const removeRoom = (roomId) => setSelections((cur) => cur.filter((r) => r.room_id !== roomId));
 
   const pay = async (guest) => {
-    const sel = selections[0];
-    if (!sel) return setError("No room selected.");
+    if (!selections.length) return setError("No room selected.");
     setPaying(true);
     setError(null);
     const data = await callTool("create_order", {
@@ -158,7 +157,8 @@ function App() {
       check_in_date: roomQuery.check_in,
       check_out_date: roomQuery.check_out,
       guests: roomQuery.guests ?? guests,
-      room_id: sel.room_id,
+      rooms: selections.map((s) => ({ room_rate_id: s.room_id, qty: s.qty })),
+      enhance_stay: extras.map((e) => ({ ehance_stay_id: String(e.id), qty: e.qty || 1, notes: "" })),
       ...guest,
     });
     setPaying(false);
@@ -184,6 +184,7 @@ function App() {
         subtitle={roomQuery?.check_in ? `${roomQuery.check_in} → ${roomQuery.check_out}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
         onContinue={continueToEnhance}
         onBack={() => setView("dates")}
+        onChangeDates={() => setView("dates")}
       />
     );
   } else if (view === "enhance") {

@@ -12,23 +12,30 @@ function ExtraCard({ extra, chosen, onToggle }) {
         )}
       </div>
       <div className="flex flex-auto flex-col p-3.5">
-        <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{extra.name}</div>
-        <div className="mt-auto flex items-center justify-between gap-2 pt-3">
-          <div>
+        <div className="text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-100">{extra.name}</div>
+        <div className="mt-auto pt-3">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <span className="text-base font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(extra.price)}</span>
             {off > 0 && (
-              <div className="flex items-center gap-1.5">
-                <span className="rounded px-1.5 py-px text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10">-{off}%</span>
+              <>
                 <span className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500 line-through">{idr.format(extra.original_price)}</span>
-              </div>
+                <span className="rounded px-1.5 py-px text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10">-{off}%</span>
+              </>
             )}
-            <div className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(extra.price)}</div>
           </div>
           <button
             type="button"
             onClick={() => onToggle(extra)}
-            className={`h-9 shrink-0 rounded-lg px-5 text-sm font-medium transition-transform duration-150 hover:opacity-90 active:scale-[0.99] ${chosen ? "border border-neutral-900 dark:border-white text-neutral-900 dark:text-neutral-100" : "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"}`}
+            className={`mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-transform duration-150 hover:opacity-90 active:scale-[0.99] ${chosen ? "border border-neutral-900 dark:border-white text-neutral-900 dark:text-neutral-100" : "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"}`}
           >
-            {chosen ? "Added" : "Select"}
+            {chosen ? (
+              <>
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                Added
+              </>
+            ) : (
+              "Select"
+            )}
           </button>
         </div>
       </div>

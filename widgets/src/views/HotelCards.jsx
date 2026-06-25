@@ -1,14 +1,17 @@
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "@openai/apps-sdk-ui/components/Icon";
-import { Star, Pin, idr } from "./icons.jsx";
+import { Icon, Star, Pin, idr } from "./icons.jsx";
 
 function HotelCard({ hotel, onDetails, onViewRooms }) {
   const rating = Number(hotel.star_rating ?? hotel.stars ?? 0);
   const priceFrom = hotel.price_from ?? hotel.from_price;
   return (
     <div className="flex w-[260px] flex-none snap-start flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
-      <button type="button" onClick={() => onDetails(hotel)} aria-label="View hotel details" className="block h-40 w-full bg-black/5 dark:bg-white/10">
-        {hotel.image && <img src={hotel.image} alt={hotel.hotel_name} loading="lazy" className="h-full w-full object-cover" />}
+      <button type="button" onClick={() => onDetails(hotel)} aria-label="View hotel details" className="relative block h-40 w-full bg-black/5 dark:bg-white/10">
+        <span className="absolute inset-0 flex items-center justify-center text-neutral-300 dark:text-neutral-600">
+          <Icon name="grid" className="h-6 w-6" />
+        </span>
+        {hotel.image && <img src={hotel.image} alt={hotel.hotel_name} loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} className="relative h-full w-full object-cover" />}
       </button>
       <div className="flex flex-auto flex-col p-3.5">
         {rating > 0 && (

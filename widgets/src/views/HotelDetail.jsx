@@ -30,11 +30,10 @@ function Gallery({ images }) {
     <div className="relative px-4 pt-4">
       <div className="grid h-44 grid-cols-[2fr_1fr_1fr] grid-rows-2 gap-1.5 overflow-hidden rounded-2xl sm:h-52">
         {slots.map((src, i) => (
-          <div key={i} className={`flex items-center justify-center bg-black/5 dark:bg-white/10 ${i === 0 ? "row-span-2" : ""}`}>
-            {src ? (
-              <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
-            ) : (
-              <Icon name="grid" className="h-5 w-5 text-neutral-300 dark:text-neutral-600" />
+          <div key={i} className={`relative flex items-center justify-center bg-black/5 dark:bg-white/10 ${i === 0 ? "row-span-2" : ""}`}>
+            <Icon name="grid" className="absolute h-5 w-5 text-neutral-300 dark:text-neutral-600" />
+            {src && (
+              <img src={src} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} className="relative h-full w-full object-cover" />
             )}
           </div>
         ))}
@@ -46,9 +45,19 @@ function Gallery({ images }) {
 function normAmenities(list) {
   return (list ?? []).map((a) =>
     typeof a === "string"
-      ? { label: a, icon: "check", available: true }
-      : { label: a.label ?? a.name, icon: a.icon ?? "check", available: a.available !== false },
+      ? { label: a, icon: "check", iconUrl: null, available: true }
+      : { label: a.label ?? a.name, icon: a.icon ?? "check", iconUrl: a.icon_url ?? a.iconUrl ?? null, available: a.available !== false },
   );
+}
+
+// Prefer the backend's PNG icon (dark line art — inverted for dark mode); fall back to a
+// built-in SVG if there's no URL or the image fails to load.
+function AmenityIcon({ iconUrl, icon, className }) {
+  const [failed, setFailed] = useState(false);
+  if (iconUrl && !failed) {
+    return <img src={iconUrl} alt="" loading="lazy" onError={() => setFailed(true)} className={`${className} object-contain opacity-80 dark:opacity-90 dark:invert`} />;
+  }
+  return <Icon name={icon} className={`${className} text-neutral-500 dark:text-neutral-400`} />;
 }
 
 // Presentational hotel-details card. `onViewRooms` fires when the footer button is
@@ -115,7 +124,7 @@ export function HotelDetail({ hotel, onViewRooms, onBack }) {
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               {(showAllAmen ? amenities : amenities.slice(0, AMEN_PREVIEW)).map((a, i) => (
                 <div key={i} className={`flex items-center gap-2.5 text-[13px] ${a.available ? "text-neutral-700 dark:text-neutral-300" : "text-neutral-400 dark:text-neutral-500"}`}>
-                  <Icon name={a.icon} className="h-[18px] w-[18px] shrink-0 text-neutral-500 dark:text-neutral-400" />
+                  <AmenityIcon iconUrl={a.iconUrl} icon={a.icon} className="h-[18px] w-[18px] shrink-0" />
                   <span className={a.available ? undefined : "line-through"}>{a.label}</span>
                 </div>
               ))}
@@ -136,7 +145,7 @@ export function HotelDetail({ hotel, onViewRooms, onBack }) {
           <Section title="Location">
             {hotel.map_image && (
               <div className="relative h-32 overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
-                <img src={hotel.map_image} alt="Map" className="h-full w-full object-cover" />
+                <img src={hotel.map_image} alt="Map" onError={(e) => { e.currentTarget.style.display = "none"; }} className="h-full w-full object-cover" />
                 <Icon name="pin" className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-full text-neutral-900 dark:text-neutral-100" />
               </div>
             )}

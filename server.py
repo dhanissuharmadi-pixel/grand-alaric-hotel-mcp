@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-load_dotenv()  # read GRAND_ALARIC_API_KEY etc. from a local .env if present
+load_dotenv()  # read .env if present
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,11 +20,27 @@ logging.basicConfig(
 logger = logging.getLogger("grand-alaric-mcp")
 
 # ---------------------------------------------------------------------------
-# Config
+# Config — all hotel-specific values come from .env so the server white-labels
+# to any property without touching code.
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api6.alarichotels.com/webapi/chatgpt")
-API_KEY = os.getenv("GRAND_ALARIC_API_KEY", "")
-API_KEY_HEADER = "phm-chat-api-key"
+# API_KEY accepts the generic name or the legacy Grand Alaric name for back-compat.
+API_KEY = os.getenv("API_KEY") or os.getenv("GRAND_ALARIC_API_KEY", "")
+API_KEY_HEADER = os.getenv("API_KEY_HEADER", "phm-chat-api-key")
+
+HOTEL_NAME = os.getenv("HOTEL_NAME", "Grand Alaric Hotel Assistant")
+HOTEL_LOCATION = os.getenv("HOTEL_LOCATION", "Bandung, Indonesia")
+
+# Primary hotel domain — drives widget CSP resource_domains and widgetDomain.
+# For multiple domains, set RESOURCE_DOMAINS as a comma-separated list instead.
+HOTEL_DOMAIN = os.getenv("HOTEL_DOMAIN", "grandalaric.com")
+_resource_domains_env = os.getenv("RESOURCE_DOMAINS", "")
+RESOURCE_DOMAINS = (
+    [d.strip() for d in _resource_domains_env.split(",") if d.strip()]
+    if _resource_domains_env
+    else [f"https://*.{HOTEL_DOMAIN}"]
+)
+PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
 
 # Google Static Maps key for the hotel-details Location thumbnail. Read from env (never
 # committed — the repo is public). Embedded in the static-map image URL the widget loads,
@@ -41,14 +57,11 @@ WIDGET_MIME = "text/html+skybridge"
 
 # The widget iframe enforces a CSP; external hosts must be allowlisted or they're
 # silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
-# Each widget declares only the domains it needs: room-results and hotel-details load
-# images (gallery, map) from the grand-alaric CDN; checkout opens the payment page via
-# openExternal (redirect_domains).
 WIDGETS = {
-    "hotel-list": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
-    "room-results": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com"]},
-    "hotel-details": {"resource_domains": ["https://*.grandalaric.com", "https://*.alarichotels.com", "https://maps.googleapis.com"]},
-    "checkout": {"redirect_domains": ["https://m.grandalaric.com"]},
+    "hotel-list": {"resource_domains": RESOURCE_DOMAINS},
+    "room-results": {"resource_domains": RESOURCE_DOMAINS},
+    "hotel-details": {"resource_domains": RESOURCE_DOMAINS + ["https://maps.googleapis.com"]},
+    "checkout": {"redirect_domains": [PAYMENT_DOMAIN]},
 }
 
 
@@ -57,7 +70,7 @@ def _widget_uri(name: str) -> str:
 
 
 def _widget_meta(name: str) -> dict:
-    return {"openai/widgetCSP": dict(WIDGETS[name]), "openai/widgetDomain": "https://grandalaric.com"}
+    return {"openai/widgetCSP": dict(WIDGETS[name]), "openai/widgetDomain": f"https://{HOTEL_DOMAIN}"}
 
 
 @lru_cache(maxsize=None)
@@ -144,7 +157,10 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if info.get("images"):
         h["gallery"] = info["images"]
     if info.get("facilities"):
-        h["amenities"] = [{"label": f["name"], "icon": _facility_icon(f["name"]), "available": True}
+        # Prefer the API's own per-facility PNG icon (specific + correct for all 52);
+        # keep the keyword→SVG mapping as a fallback for when no icon URL is present.
+        h["amenities"] = [{"label": f["name"], "icon": _facility_icon(f["name"]),
+                           "icon_url": f.get("icon"), "available": True}
                           for f in info["facilities"] if f.get("name")]
     if info.get("attraction"):
         h["nearby"] = [{"label": a["name"], "distance": a.get("distance")}
@@ -205,17 +221,18 @@ def _transport_security_kwargs() -> dict:
 # MCP server
 # ---------------------------------------------------------------------------
 mcp = FastMCP(
-    "Grand Alaric Hotel Assistant",
+    HOTEL_NAME,
     instructions=(
-        "You are a hotel concierge for Grand Alaric properties in Bandung, Indonesia. "
-        "For a general or location search (e.g. 'hotels in Bandung'), use search_hotels "
+        f"You are a hotel concierge for {HOTEL_NAME} properties in {HOTEL_LOCATION}. "
+        f"For a general or location search (e.g. 'hotels in {HOTEL_LOCATION}'), use search_hotels "
         "— it renders a carousel of hotel cards. For a specific named hotel's full "
         "details, use get_hotel_details; it renders a details card with a 'View rooms' "
         "button. Use check_availability to see room types and rates for specific dates. "
         "For bundle deals, use check_packages then check_room_packages. "
         "Use list_nationalities to resolve the guest's nationality code. "
-        "Once the user picks a room or package and provides guest details (name, "
-        "email, phone, nationality), use create_order to place the booking. The "
+        "Once the user picks one or more rooms and provides guest details (name, "
+        "email, phone, nationality), use create_order to place the booking — it takes a "
+        "list of rooms with quantities plus optional add-ons. The "
         "booking result renders a 'Complete payment' button in the widget — tell the "
         "user to tap it. NEVER write the payment URL as text; retyping its token "
         "corrupts the link and breaks checkout."
@@ -389,6 +406,7 @@ async def check_availability(
         "image": (room.get("room_images") or [None])[0],
         "description": _strip_html(room.get("room_desc", "")),
         "meta": room.get("room_info"),
+        "available": room.get("room_available"),  # max bookable of this room type (cart qty cap)
         "rates": [{
             "room_id": rt.get("room_rate_id"),
             "room_name_sub": rt.get("room_rate"),
@@ -469,8 +487,18 @@ async def list_nationalities() -> dict[str, Any]:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
-    # pass through under a stable key so the guest-details widget can read it via callTool
-    return {"nationalities": data}
+    # The backend nests the list under "hotels" (a quirk) and uses nation_name/country_name/
+    # phone_code. Normalize to stable widget keys {code, name, phone_code} so the guest form
+    # reads it the same regardless of upstream field names.
+    items = data if isinstance(data, list) else (
+        data.get("nationalities") or data.get("hotels") or data.get("data") or data.get("list") or [])
+    nationalities = [
+        {"code": code,
+         "name": it.get("country_name") or it.get("nation_name") or code,
+         "phone_code": it.get("phone_code") or it.get("phonecode") or it.get("calling_code")}
+        for it in items if isinstance(it, dict) and (code := it.get("nation_code") or it.get("code"))
+    ]
+    return {"nationalities": nationalities}
 
 
 @mcp.tool(
@@ -490,18 +518,18 @@ async def create_order(
     guest_name: str,
     guest_email: str,
     guest_phone: str,
+    rooms: list[dict] | None = None,
+    enhance_stay: list[dict] | None = None,
     room_id: str = "",
-    package_code: str = "",
-    package_id: str = "",
     nation_code: str = "id",
     salutation: int = 3,
     guests: int = 2,
     promocode: str = "",
 ) -> dict[str, Any]:
     """
-    Place a reservation. Call ONLY after the user has confirmed the room/package and
-    all guest details. Pass EITHER room_id (a plain room, from check_availability) OR
-    package_id + package_code (a package, from check_room_packages).
+    Place a reservation via the cart API. Supports multiple room types and quantities
+    plus optional add-ons. Call ONLY after the user has confirmed the rooms and all
+    guest details.
 
     IMPORTANT: the response contains a payment URL with a long signed token. DO NOT
     write, paste, or retype that URL in your reply — retyping corrupts the token and
@@ -515,9 +543,11 @@ async def create_order(
         guest_name: Full name of the primary guest.
         guest_email: Guest email for the booking confirmation.
         guest_phone: Guest phone number (e.g. '+6282214171060').
-        room_id: Room ID from check_availability (e.g. 'SUPK-IWS312ROO'). For a plain room.
-        package_code: Package code from check_packages (e.g. 'GNW'). For a package booking.
-        package_id: Package room ID from check_room_packages (e.g. 'DLXK-GNW335').
+        rooms: Rooms to book, each {"room_rate_id": <id from check_availability>, "qty": <int>}.
+            Quantity per room type must not exceed that room's `available` count.
+        enhance_stay: Optional add-ons, each {"ehance_stay_id": <id from check_availability
+            extras>, "qty": <int>, "notes": <str>}.
+        room_id: Back-compat shortcut to book a single room (qty 1) when `rooms` is omitted.
         nation_code: Guest nationality code from list_nationalities (e.g. 'id', 'ae').
         salutation: Salutation code as defined by the API (e.g. 3).
         guests: Number of adult guests.
@@ -528,19 +558,38 @@ async def create_order(
     except ValueError as exc:
         return {"error": str(exc)}
 
-    if not room_id and not package_id:
-        return {"error": "Provide either room_id (from check_availability) or package_id (from check_room_packages)."}
+    # Build the cart. Accept a list of {room_rate_id, qty}; fall back to a single room_id.
+    cart_rooms = []
+    for r in rooms or []:
+        if isinstance(r, dict) and (rid := r.get("room_rate_id") or r.get("room_id")):
+            cart_rooms.append({"room_rate_id": rid, "qty": max(1, int(r.get("qty") or 1))})
+    if not cart_rooms and room_id:
+        cart_rooms.append({"room_rate_id": room_id, "qty": 1})
+    if not cart_rooms:
+        return {"error": 'Provide at least one room in `rooms`, e.g. [{"room_rate_id": "SUPK-IWS312ROO", "qty": 1}].'}
 
-    selection = {"package_code": package_code, "package_id": package_id} if package_id else {"room_id": room_id}
-    order = _stay_body(hotel_id, check_in, check_out, guests, **selection, promocode=promocode,
+    cart: dict[str, Any] = {"rooms": cart_rooms}
+    cart_extras = []
+    for e in enhance_stay or []:
+        # note the backend's misspelling: "ehance_stay_id"
+        if isinstance(e, dict) and (eid := e.get("ehance_stay_id") or e.get("enhance_stay_id") or e.get("id")):
+            cart_extras.append({"ehance_stay_id": str(eid), "notes": e.get("notes") or "",
+                                "qty": max(1, int(e.get("qty") or 1))})
+    if cart_extras:
+        cart["enhance_stay"] = cart_extras
+
+    order = _stay_body(hotel_id, check_in, check_out, guests, cart=cart, promocode=promocode,
                        guest={"salutation": salutation, "nation_code": nation_code,
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
-    logger.info("create_order hotel=%s room=%s package=%s guest=%r", hotel_id, room_id, package_id, guest_name)
+    logger.info("create_order hotel=%s rooms=%s extras=%d guest=%r", hotel_id, cart_rooms, len(cart_extras), guest_name)
     raw = await _api("POST", "/orders", order)
     try:
         result = json.loads(raw)  # {"success", "tracking_id", "url"} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
+    # Surface the backend's own validation/limit message (e.g. "Cart is required") to the widget.
+    if isinstance(result, dict) and result.get("success") is False and not result.get("error"):
+        result["error"] = result.get("message") or "Booking failed. Please review your selection."
     # echo booking essentials so the widget can show a summary (the API response omits them)
     result["booking"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                          "check_out": check_out.isoformat(), "guest_name": guest_name}

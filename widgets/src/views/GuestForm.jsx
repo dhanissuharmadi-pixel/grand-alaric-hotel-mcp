@@ -20,6 +20,54 @@ const ok = "border-black/10 dark:border-white/15";
 const bad = "border-red-400 dark:border-red-500";
 const errCls = "mt-1 text-[13px] text-red-600 dark:text-red-400";
 
+// Type-to-filter dropdown — replaces a 176-option native <select> so the guest can find a
+// country by typing instead of scrolling. `selectedText` is shown when collapsed; options
+// match on label (country) or hint (phone code).
+function Combobox({ options, value, onChange, placeholder, selectedText, triggerClassName, wrapperClassName = "" }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ql = q.trim().toLowerCase();
+  const filtered = ql
+    ? options.filter((o) => o.label.toLowerCase().includes(ql) || (o.hint ?? "").toLowerCase().includes(ql))
+    : options;
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        autoComplete="off"
+        value={open ? q : selectedText ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => { setOpen(true); setQ(""); }}
+        onBlur={() => setTimeout(() => { setOpen(false); setQ(""); }, 150)}
+        className={triggerClassName}
+      />
+      {open && (
+        <div className="absolute left-0 z-30 mt-1 max-h-60 w-max min-w-full max-w-[20rem] overflow-y-auto rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-neutral-900 shadow-xl [scrollbar-width:thin]">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2.5 text-sm text-neutral-500 dark:text-neutral-400">No matches</div>
+          ) : (
+            filtered.map((o) => (
+              <button
+                key={`${o.value}-${o.label}`}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onChange(o.value); setOpen(false); setQ(""); }}
+                className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10 ${o.value === value ? "bg-black/5 dark:bg-white/10" : ""}`}
+              >
+                <span className="truncate text-neutral-900 dark:text-neutral-100">{o.label}</span>
+                {o.hint && <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{o.hint}</span>}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GuestForm({ hotelName, query, selections, extras, nationalities = [], onPay, onBack, paying, error }) {
   const [salutation, setSalutation] = useState(3);
   const [name, setName] = useState("");
@@ -28,6 +76,12 @@ export function GuestForm({ hotelName, query, selections, extras, nationalities 
   const [email, setEmail] = useState("");
   const [nation, setNation] = useState("");
   const [touched, setTouched] = useState(false);
+
+  const natOptions = nationalities.map((n) => ({ value: natCode(n), label: natName(n), hint: natPhone(n) }));
+  const phoneOptions = (nationalities.length ? nationalities : [{ phone_code: "+62", name: "Indonesia" }])
+    .filter((n) => natPhone(n))
+    .map((n) => ({ value: natPhone(n), label: natName(n), hint: natPhone(n) }));
+  const selectedNatName = natOptions.find((o) => o.value === nation)?.label ?? "";
 
   const errs = {
     name: !name.trim() ? "Please enter your full name" : null,
@@ -81,14 +135,16 @@ export function GuestForm({ hotelName, query, selections, extras, nationalities 
           <div className="min-w-0">
             <span className={labelCls}>Mobile number *</span>
             <div className="mt-1.5 flex gap-2">
-              <select value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} className={`h-11 w-24 shrink-0 rounded-xl border ${ok} bg-white dark:bg-neutral-900 px-2 text-sm`}>
-                {(nationalities.length ? nationalities : [{ phone_code: "+62", nationality: "Indonesia" }])
-                  .filter((n) => natPhone(n))
-                  .map((n, i) => (
-                    <option key={i} value={natPhone(n)}>{natPhone(n)}</option>
-                  ))}
-              </select>
-              <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} placeholder="8221xxxxxxx" inputMode="numeric" className={`h-11 min-w-0 flex-1 rounded-xl border ${show("phone") ? bad : ok} bg-white dark:bg-neutral-900 px-3 text-sm`} />
+              <Combobox
+                options={phoneOptions}
+                value={phoneCode}
+                onChange={setPhoneCode}
+                selectedText={phoneCode}
+                placeholder="Code"
+                wrapperClassName="shrink-0"
+                triggerClassName={`h-11 w-24 rounded-xl border ${ok} bg-white dark:bg-neutral-900 px-3 text-sm text-neutral-900 dark:text-neutral-100`}
+              />
+              <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} placeholder="8221xxxxxxx" inputMode="numeric" className={`h-11 min-w-0 flex-1 rounded-xl border ${show("phone") ? bad : ok} bg-white dark:bg-neutral-900 px-3 text-sm text-neutral-900 dark:text-neutral-100`} />
             </div>
             {show("phone") && <div className={errCls}>{errs.phone}</div>}
           </div>
@@ -99,16 +155,18 @@ export function GuestForm({ hotelName, query, selections, extras, nationalities 
           </label>
         </div>
 
-        <label>
+        <div>
           <span className={labelCls}>Nationality *</span>
-          <select value={nation} onChange={(e) => setNation(e.target.value)} className={`${inputCls} ${show("nation") ? bad : ok}`}>
-            <option value="">Select your nationality</option>
-            {nationalities.map((n, i) => (
-              <option key={i} value={natCode(n)}>{natName(n)}</option>
-            ))}
-          </select>
+          <Combobox
+            options={natOptions}
+            value={nation}
+            onChange={setNation}
+            selectedText={selectedNatName}
+            placeholder="Search your nationality"
+            triggerClassName={`${inputCls} ${show("nation") ? bad : ok}`}
+          />
           {show("nation") && <div className={errCls}>{errs.nation}</div>}
-        </label>
+        </div>
 
         <OrderSummary hotelName={hotelName} query={query} selections={selections} extras={extras} />
 
