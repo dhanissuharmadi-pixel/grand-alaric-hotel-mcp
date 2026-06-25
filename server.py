@@ -1,6 +1,5 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
-import asyncio
 import html
 import httpx
 import json
@@ -120,21 +119,13 @@ def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
 
 
-def _list_item(base: dict, info: dict | None) -> dict:
-    """Light hotel shape for the hotel-list carousel card: name, stars, area, one image.
-    From-price isn't available here (it needs rooms + dates), so the card omits it."""
-    item = {"hotel_id": base["hotel_id"], "hotel_name": base.get("hotel_name")}
-    detail = info.get("hotel") if isinstance(info, dict) else None
-    if isinstance(detail, dict):
-        item["hotel_name"] = detail.get("hotel_name", item["hotel_name"])
-        if detail.get("rating") is not None:
-            item["star_rating"] = detail["rating"]
-        area = ", ".join(p for p in (detail.get("hotel_city_name"), detail.get("hotel_state")) if p)
-        if area:
-            item["area"] = area
-        if detail.get("images"):
-            item["image"] = detail["images"][0]
-    return item
+def _list_item(h: dict) -> dict:
+    """Map a /hotels item to the hotel-list card shape (the API now ships cover, rating,
+    city/province and starting_price directly — no per-hotel enrichment needed)."""
+    area = ", ".join(p for p in (h.get("city_name"), h.get("province_name")) if p)
+    return {"hotel_id": h.get("hotel_id"), "hotel_name": h.get("hotel_name"),
+            "star_rating": h.get("rating"), "area": area or None,
+            "image": h.get("hotel_cover"), "price_from": h.get("starting_price")}
 
 
 def _normalize_hotel(base: dict, info: dict) -> dict:
@@ -158,6 +149,8 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if info.get("attraction"):
         h["nearby"] = [{"label": a["name"], "distance": a.get("distance")}
                        for a in info["attraction"] if a.get("name")]
+    if info.get("starting_price") is not None:
+        h["price_from"] = info["starting_price"]
     lat, lng = info.get("hotel_loc_lat"), info.get("hotel_loc_long")
     if lat and lng and GOOGLE_MAPS_API_KEY:
         # Static map centered on the hotel; the widget overlays its own pin at center.
@@ -168,6 +161,19 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if policies:
         h["policies"] = policies
     return h
+
+
+async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: int) -> list[dict]:
+    """Add-on extras from /enchance-stay, shaped for the enhance-stay step."""
+    raw = await _api("POST", "/enchance-stay", _stay_body(hotel_id, check_in, check_out, guests))
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    items = data if isinstance(data, list) else data.get("data") or data.get("enhancements") or []
+    return [{"id": e.get("enhance_stay_id"), "name": e.get("title"), "image": e.get("image"),
+             "price": e.get("end_price"), "original_price": e.get("original_price")}
+            for e in items if isinstance(e, dict) and e.get("title")]
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
@@ -302,20 +308,7 @@ async def search_hotels(location: str) -> dict[str, Any]:
     hotels = result.get("hotels", [])
     matches = [h for h in hotels
                if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()] or hotels
-    # Enrich each card with stars/area/image from /hotel/info (/hotels has only id+name+
-    # phone). Fan the per-hotel calls out concurrently so latency stays flat as the
-    # catalog grows; gather preserves order.
-    async def _enrich(h: dict) -> dict:
-        info = None
-        if h.get("hotel_id"):
-            info_raw = await _api("POST", "/hotel/info", {"id": h["hotel_id"].lower()})
-            try:
-                info = json.loads(info_raw)
-            except json.JSONDecodeError:
-                info = None
-        return _list_item(h, info)
-
-    result["hotels"] = list(await asyncio.gather(*(_enrich(h) for h in matches)))
+    result["hotels"] = [_list_item(h) for h in matches]
     result["query"] = {"location": location}
     return result
 
@@ -387,32 +380,28 @@ async def check_availability(
         result = json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
     except json.JSONDecodeError:
         return {"error": raw}
-    rooms = result.get("rooms", [])
-    # Split "Superior City View - Book Direct & Save More" into name + subtitle.
-    for room in rooms:
-        parts = (room.get("room_name") or "Room").split(" - ", 1)
-        room["room_name"] = parts[0]
-        if len(parts) > 1:
-            room["room_name_sub"] = parts[1]
-    # Derive original_price for discounted rooms. Room IDs follow the pattern:
-    # base → "{type}-{ROO|BAR}", discounted → "{type}-{dealcode}{ROO|BAR}".
-    # Match each discounted room to its base variant to get the pre-discount price.
-    base_prices: dict[tuple[str, str], int] = {}
-    for room in rooms:
-        parts = room.get("room_id", "").split("-", 1)
-        if len(parts) == 2 and parts[1] in ("ROO", "BAR"):
-            base_prices[(parts[0], parts[1])] = room["price"]
-    for room in rooms:
-        parts = room.get("room_id", "").split("-", 1)
-        if len(parts) == 2 and parts[1] not in ("ROO", "BAR"):
-            meal = parts[1][-3:]
-            if meal in ("ROO", "BAR"):
-                original = base_prices.get((parts[0], meal))
-                if original and original > room["price"]:
-                    room["original_price"] = original
-    # echo the query so the room-results widget can build an unambiguous "book this
-    # room" message (room_id + hotel + dates) for the model. Mirrors create_order's
-    # "booking" echo — the API response itself omits these.
+    # /rooms returns rooms already grouped by type, each with nested rates. Reshape the
+    # field names to what the room widget reads (meal/conditions/benefits come straight
+    # from the API now — no deriving from room_id).
+    result["rooms"] = [{
+        "name": room.get("room_name"),
+        "images": room.get("room_images") or [],
+        "image": (room.get("room_images") or [None])[0],
+        "description": _strip_html(room.get("room_desc", "")),
+        "meta": room.get("room_info"),
+        "rates": [{
+            "room_id": rt.get("room_rate_id"),
+            "room_name_sub": rt.get("room_rate"),
+            "meal": rt.get("breakfast"),
+            "conditions": rt.get("cancellation_info") or [],
+            "benefits": (rt.get("benefit") or {}).get("data") or [],
+            "price": rt.get("price"),
+            "original_price": rt.get("original_price"),
+        } for rt in room.get("rates", [])],
+    } for room in result.get("rooms", []) if room.get("rates")]  # skip unbookable (no-rate) rooms
+    # add-ons for the "enhance your stay" step, and echo the query so the widget/model
+    # can build an unambiguous booking message (the API response omits these).
+    result["extras"] = await _enhancements(hotel_id, check_in, check_out, guests)
     result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                        "check_out": check_out.isoformat(), "guests": guests}
     return result

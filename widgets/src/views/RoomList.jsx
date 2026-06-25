@@ -4,33 +4,6 @@ import { Caret, idr } from "./icons.jsx";
 
 const ROOMS_PER_PAGE = 2;
 
-function mealLabel(roomId) {
-  const id = (roomId || "").toUpperCase();
-  if (id.endsWith("BAR")) return "Bed & breakfast";
-  if (id.endsWith("ROO")) return "Room only";
-  return null;
-}
-
-// One entry per rate (deal × meal plan); entries sharing a display name are one room
-// type. Group into cards listing their rates. meta/description/facilities/images render
-// when the API provides them and are hidden otherwise.
-function groupRooms(rooms) {
-  const groups = [];
-  const byName = new Map();
-  for (const r of rooms) {
-    const key = r.room_name || r.room_id;
-    let g = byName.get(key);
-    if (!g) {
-      g = { name: key, image: r.room_image, images: r.images, meta: r.meta, description: r.description, facilities: r.facilities, rates: [] };
-      byName.set(key, g);
-      groups.push(g);
-    }
-    if (!g.image && r.room_image) g.image = r.room_image;
-    g.rates.push(r);
-  }
-  return groups;
-}
-
 function Stepper({ value, onDec, onInc }) {
   // ponytail: 1 room max — create_order books one room_id with no count, so the summary
   // total can't exceed what's booked. Lift the cap (here + setQty) when the API takes a count.
@@ -46,7 +19,7 @@ function Stepper({ value, onDec, onInc }) {
 function Rate({ rate, qty, onInc, onDec }) {
   const [open, setOpen] = useState(false);
   const off = rate.original_price && rate.original_price > rate.price ? Math.round((1 - rate.price / rate.original_price) * 100) : 0;
-  const meal = mealLabel(rate.room_id);
+  const meal = rate.meal;
   const conditions = rate.conditions ?? [];
   const benefits = rate.benefits ?? [];
   const hasDetails = conditions.length > 0 || benefits.length > 0;
@@ -190,7 +163,7 @@ function NavButton({ side, onClick, disabled }) {
 // Continue → onContinue(selections, total). Tapping a card opens an in-place room-detail
 // view (image, facilities, description, rates) sharing the same quantity state.
 export function RoomList({ rooms, title = "Available rooms", subtitle, onContinue, onBack }) {
-  const groups = groupRooms(rooms ?? []);
+  const groups = rooms ?? [];
   const pages = [];
   for (let i = 0; i < groups.length; i += ROOMS_PER_PAGE) pages.push(groups.slice(i, i + ROOMS_PER_PAGE));
 
