@@ -27,7 +27,10 @@ function App() {
   };
 
   return (
-    <div className={theme === "dark" ? "dark" : undefined}>
+    <div
+      className={`${theme === "dark" ? "dark " : ""}bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100`}
+      style={{ colorScheme: theme === "dark" ? "dark" : "light" }}
+    >
       <div className="antialiased w-full">
         <RoomList rooms={out?.rooms ?? []} title="Available rooms" subtitle={subtitle} onContinue={proceed} />
       </div>

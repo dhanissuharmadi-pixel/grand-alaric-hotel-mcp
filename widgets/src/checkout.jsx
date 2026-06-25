@@ -24,7 +24,10 @@ function App() {
     .join(" · ");
 
   return (
-    <div className={theme === "dark" ? "dark" : undefined}>
+    <div
+      className={`${theme === "dark" ? "dark " : ""}bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100`}
+      style={{ colorScheme: theme === "dark" ? "dark" : "light" }}
+    >
       <div className="antialiased w-full p-5 rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
         {url ? (
           <>
