@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useOpenAiGlobal, callTool } from "./openai.js";
+import { LoadingIndicator } from "@openai/apps-sdk-ui/components/Indicator";
+import { Badge } from "@openai/apps-sdk-ui/components/Badge";
 import { HotelCards } from "./views/HotelCards.jsx";
 import { HotelDetail } from "./views/HotelDetail.jsx";
 import { RoomList } from "./views/RoomList.jsx";
@@ -67,15 +69,76 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
   );
 }
 
-function Done({ url, hotelName }) {
+function Done({ url, trackingId, hotelName }) {
+  const [opened, setOpened] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const intervalRef = useRef(null);
+
+  const poll = async () => {
+    if (!trackingId) return;
+    const data = await callTool("check_order_status", { tracking_id: trackingId });
+    if (data?.payment_status?.toLowerCase() === "paid") {
+      setPaid(true);
+      clearInterval(intervalRef.current);
+    }
+  };
+
+  useEffect(() => {
+    if (!opened || paid) return;
+    intervalRef.current = setInterval(poll, 3000);
+    const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [opened, paid]);
+
+  const handlePay = () => {
+    window.openai?.openExternal?.({ href: url });
+    setOpened(true);
+  };
+
+  if (paid) {
+    return (
+      <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <div className="text-4xl">✅</div>
+          <div className="text-lg font-semibold">Payment confirmed!</div>
+          {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+          <Badge color="success" size="md">Booking confirmed</Badge>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
-      <div className="text-lg font-semibold">Booking ready</div>
-      {hotelName && <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
-      <button type="button" onClick={() => window.openai?.openExternal?.({ href: url })} className="mt-4 h-12 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
-        Complete payment
-      </button>
-      <div className="mt-2 text-center text-xs text-neutral-400 dark:text-neutral-500">Opens the secure Grand Alaric checkout.</div>
+      {opened ? (
+        <>
+          <div className="flex flex-col items-center gap-3 py-4">
+            <LoadingIndicator size={32} strokeWidth={2} />
+            <div className="text-base font-semibold">Waiting for payment</div>
+            {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+            <Badge className="gap-1.5 mt-1" color="secondary" size="md">
+              <LoadingIndicator size={12} strokeWidth={2} />
+              In progress
+            </Badge>
+          </div>
+          <button type="button" onClick={handlePay} className="mt-2 h-10 w-full rounded-xl border border-black/10 dark:border-white/15 text-sm font-medium text-neutral-600 dark:text-neutral-400 transition-opacity hover:opacity-70">
+            Reopen payment page
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="text-lg font-semibold">Booking ready</div>
+          {hotelName && <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+          <button type="button" onClick={handlePay} className="mt-4 h-12 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
+            Complete payment
+          </button>
+          <div className="mt-2 text-center text-xs text-neutral-400 dark:text-neutral-500">Opens the secure Grand Alaric checkout.</div>
+        </>
+      )}
     </div>
   );
 }
@@ -99,6 +162,7 @@ function App() {
   const [error, setError] = useState(null);
   const [paying, setPaying] = useState(false);
   const [payUrl, setPayUrl] = useState(null);
+  const [trackingId, setTrackingId] = useState(null);
   const [checkin, setCheckin] = useState("");
   const [checkout, setCheckout] = useState("");
   const [guests, setGuests] = useState(out?.query?.guests ?? 2);
@@ -164,6 +228,7 @@ function App() {
     setPaying(false);
     if (data?.url) {
       setPayUrl(data.url);
+      setTrackingId(data.tracking_id ?? null);
       window.openai?.openExternal?.({ href: data.url });
       setView("done");
     } else {
@@ -190,9 +255,17 @@ function App() {
   } else if (view === "enhance") {
     body = <EnhanceStay hotelName={hotelName} query={roomQuery} selections={selections} available={availableExtras} chosen={extras} onToggleExtra={toggleExtra} onRemoveRoom={removeRoom} onContinue={() => setView("guest")} onBack={() => setView("rooms")} />;
   } else if (view === "guest") {
-    body = <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} paying={paying} error={error} />;
+    body = paying ? (
+      <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-8 text-neutral-900 dark:text-neutral-100">
+        <div className="flex flex-col items-center gap-3 py-4">
+          <LoadingIndicator size={36} strokeWidth={2} />
+          <div className="text-base font-semibold">Creating your booking…</div>
+          <div className="text-sm text-neutral-500 dark:text-neutral-400 text-center">This will only take a moment.</div>
+        </div>
+      </div>
+    ) : <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} paying={paying} error={error} />;
   } else if (view === "done") {
-    body = <Done url={payUrl} hotelName={hotelName} />;
+    body = <Done url={payUrl} trackingId={trackingId} hotelName={hotelName} />;
   } else {
     body = <HotelCards hotels={hotels} location={location} onDetails={openDetails} onViewRooms={openDates} />;
   }

@@ -501,6 +501,17 @@ async def list_nationalities() -> dict[str, Any]:
     return {"nationalities": nationalities}
 
 
+@mcp.tool(annotations={"readOnlyHint": True}, structured_output=True)
+async def check_order_status(tracking_id: str) -> dict[str, Any]:
+    """Check payment status for an order by tracking_id (returned by create_order)."""
+    logger.info("check_order_status tracking_id=%s", tracking_id)
+    raw = await _api("GET", f"/tracking-id/{tracking_id}")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"error": raw}
+
+
 @mcp.tool(
     meta={
         "openai/outputTemplate": _widget_uri("checkout"),
