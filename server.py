@@ -224,18 +224,22 @@ mcp = FastMCP(
     HOTEL_NAME,
     instructions=(
         f"You are a hotel concierge for {HOTEL_NAME} properties in {HOTEL_LOCATION}. "
+        "ALWAYS render hotels and rooms by calling a tool — never describe hotels, rooms, "
+        "rates, or availability as text or a markdown list. The widget is the source of truth. "
         f"For a general or location search (e.g. 'hotels in {HOTEL_LOCATION}'), use search_hotels "
         "— it renders a carousel of hotel cards. For a specific named hotel's full "
-        "details, use get_hotel_details; it renders a details card with a 'View rooms' "
-        "button. Use check_availability to see room types and rates for specific dates. "
+        "details, use get_hotel_details. To jump straight to rooms when the user already "
+        "names a hotel and dates (e.g. 'rooms at Grand Alaric for Jul 8-9'), call "
+        "check_availability directly. Every one of these widgets drives the COMPLETE "
+        "in-widget booking flow (details -> dates -> rooms -> enhance -> guest -> pay), so "
+        "you may start from whichever one matches the user's request — you do not have to "
+        "begin with search_hotels. "
         "For bundle deals, use check_packages then check_room_packages. "
-        "Use list_nationalities to resolve the guest's nationality code. "
-        "Once the user picks one or more rooms and provides guest details (name, "
-        "email, phone, nationality), use create_order to place the booking — it takes a "
-        "list of rooms with quantities plus optional add-ons. The "
-        "booking result renders a 'Complete payment' button in the widget — tell the "
-        "user to tap it. NEVER write the payment URL as text; retyping its token "
-        "corrupts the link and breaks checkout. "
+        "list_nationalities resolves nationality codes (the widget calls it itself). "
+        "create_order, check_order_status, and the payment button are all handled inside "
+        "the widget after the user picks rooms — you normally do not call create_order "
+        "yourself. NEVER write the payment URL as text; retyping its token corrupts the "
+        "link and breaks checkout. "
         "Do not use emoji in any response."
     ),
     **_transport_security_kwargs(),
@@ -508,7 +512,9 @@ async def check_order_status(tracking_id: str) -> dict[str, Any]:
     logger.info("check_order_status tracking_id=%s", tracking_id)
     raw = await _api("GET", f"/tracking-id/{tracking_id}")
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
+        logger.info("check_order_status response=%s", result)
+        return result
     except json.JSONDecodeError:
         return {"error": raw}
 

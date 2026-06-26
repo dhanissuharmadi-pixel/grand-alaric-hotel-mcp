@@ -1,31 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { useOpenAiGlobal, sendFollowup } from "./openai.js";
-import { HotelDetail } from "./views/HotelDetail.jsx";
-import "./index.css";
+import { BookingApp } from "./BookingApp.jsx";
 
-// Standalone hotel-details widget (rendered when the model calls get_hotel_details
-// directly). "View rooms" hands off to the model since this widget can't fetch rooms.
-function App() {
-  const out = useOpenAiGlobal("toolOutput");
-  const theme = useOpenAiGlobal("theme");
-  const hotel = out?.hotel ?? {};
-
-  const viewRooms = () =>
-    sendFollowup(
-      `I'd like to see the rooms at ${hotel.hotel_name ?? hotel.name ?? "this hotel"}${hotel.hotel_id ? ` (hotel ${hotel.hotel_id})` : ""}. ` +
-        `Please check availability.`,
-    );
-
-  return (
-    <div
-      className={`${theme === "dark" ? "dark " : ""}bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100`}
-      style={{ colorScheme: theme === "dark" ? "dark" : "light" }}
-    >
-      <div className="antialiased w-full">
-        <HotelDetail hotel={hotel} onViewRooms={viewRooms} />
-      </div>
-    </div>
-  );
-}
-
-createRoot(document.getElementById("root")).render(<App />);
+// get_hotel_details renders this. BookingApp infers the "details" entry from out.hotel
+// and drives the full flow in-widget (details → dates → rooms → enhance → guest → pay).
+createRoot(document.getElementById("root")).render(<BookingApp />);
