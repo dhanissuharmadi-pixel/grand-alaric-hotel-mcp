@@ -17,7 +17,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("grand-alaric-mcp")
+logger = logging.getLogger("hotel-mcp")
 
 # ---------------------------------------------------------------------------
 # Config — all hotel-specific values come from .env so the server white-labels
@@ -235,7 +235,8 @@ mcp = FastMCP(
         "list of rooms with quantities plus optional add-ons. The "
         "booking result renders a 'Complete payment' button in the widget — tell the "
         "user to tap it. NEVER write the payment URL as text; retyping its token "
-        "corrupts the link and breaks checkout."
+        "corrupts the link and breaks checkout. "
+        "Do not use emoji in any response."
     ),
     **_transport_security_kwargs(),
 )
@@ -305,14 +306,14 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
 )
 async def search_hotels(location: str) -> dict[str, Any]:
     """
-    Find Grand Alaric properties matching a location and show them as a card carousel.
+    Find properties matching a location and show them as a card carousel.
 
     Use this for general/location searches (e.g. "hotels in Bandung"). Each card has a
     'Hotel Details' link and a 'View Rooms' button. For a single named hotel's full
     details card, call get_hotel_details instead.
 
     Args:
-        location: City, area, or keyword (e.g. 'Bandung', 'Dago', 'Indonesia').
+        location: City, area, or keyword (e.g. 'Bandung', 'Jakarta').
     """
     logger.info("search_hotels location=%r", location)
     raw = await _api("GET", "/hotels")
@@ -612,5 +613,5 @@ if __name__ == "__main__":
     mcp.settings.host = os.getenv("HOST", "127.0.0.1")  # set 0.0.0.0 when hosting
     mcp.settings.port = int(os.getenv("PORT", "8000"))  # host/port only used by sse/http transports
     # note: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
-    logger.info("Starting Grand Alaric MCP — transport=%s host=%s port=%d", transport, mcp.settings.host, mcp.settings.port)
+    logger.info("Starting %s MCP — transport=%s host=%s port=%d", HOTEL_NAME, transport, mcp.settings.host, mcp.settings.port)
     mcp.run(transport=transport)

@@ -245,6 +245,7 @@ function App() {
     body = (
       <RoomList
         rooms={rooms}
+        nights={roomQuery?.check_in && roomQuery?.check_out ? Math.max(1, Math.round((new Date(roomQuery.check_out) - new Date(roomQuery.check_in)) / 86400000)) : 1}
         title={hotelName ?? "Available rooms"}
         subtitle={roomQuery?.check_in ? `${roomQuery.check_in} → ${roomQuery.check_out}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
         onContinue={continueToEnhance}
