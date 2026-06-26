@@ -70,7 +70,6 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
 }
 
 function Done({ url, trackingId, hotelName }) {
-  const [opened, setOpened] = useState(false);
   const [paid, setPaid] = useState(false);
   const intervalRef = useRef(null);
 
@@ -84,7 +83,7 @@ function Done({ url, trackingId, hotelName }) {
   };
 
   useEffect(() => {
-    if (!opened || paid) return;
+    if (paid) return;
     intervalRef.current = setInterval(poll, 3000);
     const onVisible = () => { if (document.visibilityState === "visible") poll(); };
     document.addEventListener("visibilitychange", onVisible);
@@ -92,12 +91,7 @@ function Done({ url, trackingId, hotelName }) {
       clearInterval(intervalRef.current);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [opened, paid]);
-
-  const handlePay = () => {
-    window.openai?.openExternal?.({ href: url });
-    setOpened(true);
-  };
+  }, [paid]);
 
   if (paid) {
     return (
@@ -114,31 +108,15 @@ function Done({ url, trackingId, hotelName }) {
 
   return (
     <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
-      {opened ? (
-        <>
-          <div className="flex flex-col items-center gap-3 py-4">
-            <LoadingIndicator size={32} strokeWidth={2} />
-            <div className="text-base font-semibold">Waiting for payment</div>
-            {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
-            <Badge className="gap-1.5 mt-1" color="secondary" size="md">
-              <LoadingIndicator size={12} strokeWidth={2} />
-              In progress
-            </Badge>
-          </div>
-          <button type="button" onClick={handlePay} className="mt-2 h-10 w-full rounded-xl border border-black/10 dark:border-white/15 text-sm font-medium text-neutral-600 dark:text-neutral-400 transition-opacity hover:opacity-70">
-            Reopen payment page
-          </button>
-        </>
-      ) : (
-        <>
-          <div className="text-lg font-semibold">Booking ready</div>
-          {hotelName && <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
-          <button type="button" onClick={handlePay} className="mt-4 h-12 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
-            Complete payment
-          </button>
-          <div className="mt-2 text-center text-xs text-neutral-400 dark:text-neutral-500">Opens the secure Grand Alaric checkout.</div>
-        </>
-      )}
+      <div className="flex flex-col items-center gap-3 py-4">
+        <LoadingIndicator size={32} strokeWidth={2} />
+        <div className="text-base font-semibold">Waiting for payment</div>
+        {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+        <Badge color="secondary" size="md">In progress</Badge>
+      </div>
+      <button type="button" onClick={() => window.openai?.openExternal?.({ href: url })} className="mt-2 h-10 w-full rounded-xl border border-black/10 dark:border-white/15 text-sm font-medium text-neutral-600 dark:text-neutral-400 transition-opacity hover:opacity-70">
+        Reopen payment page
+      </button>
     </div>
   );
 }
@@ -245,7 +223,6 @@ function App() {
     body = (
       <RoomList
         rooms={rooms}
-        nights={roomQuery?.check_in && roomQuery?.check_out ? Math.max(1, Math.round((new Date(roomQuery.check_out) - new Date(roomQuery.check_in)) / 86400000)) : 1}
         title={hotelName ?? "Available rooms"}
         subtitle={roomQuery?.check_in ? `${roomQuery.check_in} → ${roomQuery.check_out}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
         onContinue={continueToEnhance}

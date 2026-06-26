@@ -177,7 +177,7 @@ function NavButton({ side, onClick, disabled }) {
 // Quantity-mode room list: each rate has a stepper; a footer shows the running total and
 // Continue → onContinue(selections, total). Tapping a card opens an in-place room-detail
 // view (image, facilities, description, rates) sharing the same quantity state.
-export function RoomList({ rooms, nights = 1, title = "Available rooms", subtitle, onContinue, onBack, onChangeDates }) {
+export function RoomList({ rooms, title = "Available rooms", subtitle, onContinue, onBack, onChangeDates }) {
   const groups = rooms ?? [];
   const pages = [];
   for (let i = 0; i < groups.length; i += ROOMS_PER_PAGE) pages.push(groups.slice(i, i + ROOMS_PER_PAGE));
@@ -205,7 +205,7 @@ export function RoomList({ rooms, nights = 1, title = "Available rooms", subtitl
   };
 
   const selections = groups.flatMap((g) =>
-    g.rates.filter((r) => (qty[r.room_id] || 0) > 0).map((r) => ({ room_id: r.room_id, roomName: g.name, rateLabel: r.room_name_sub || "Standard rate", price: r.price * nights, qty: qty[r.room_id] })),
+    g.rates.filter((r) => (qty[r.room_id] || 0) > 0).map((r) => ({ room_id: r.room_id, roomName: g.name, rateLabel: r.room_name_sub || "Standard rate", price: r.price, qty: qty[r.room_id] })),
   );
   const roomCount = selections.reduce((s, r) => s + r.qty, 0);
   const total = selections.reduce((s, r) => s + r.price * r.qty, 0);
