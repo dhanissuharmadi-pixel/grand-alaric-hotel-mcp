@@ -76,7 +76,8 @@ function Done({ url, trackingId, hotelName }) {
   const poll = async () => {
     if (!trackingId) return;
     const data = await callTool("check_order_status", { tracking_id: trackingId });
-    if (data?.payment_status?.toLowerCase() === "paid") {
+    const s = data?.payment_status?.toLowerCase() ?? "";
+    if (s === "paid" || s === "settlement" || s === "capture" || s === "success") {
       setPaid(true);
       clearInterval(intervalRef.current);
     }
