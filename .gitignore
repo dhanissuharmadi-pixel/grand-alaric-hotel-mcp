@@ -9,11 +9,8 @@ wheels/
 .DS_Store
 .env
 
-# Widget build tooling — node deps are restored with `npm install`, not committed.
-# The built output (assets/*.html) IS committed so the server can serve it.
 node_modules/
 
-# Postman Git-sync output; keep it (and any keys it may store) out of the repo
 postman/collections/
 postman/environments/
 .postman/
