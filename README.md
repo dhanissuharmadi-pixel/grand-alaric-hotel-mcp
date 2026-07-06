@@ -69,9 +69,9 @@ is unauthenticated by default — don't expose it publicly without a gateway or 
 
 ## Branches
 
-This branch (`main`) contains only what's needed to deploy: `server.py`, the built
-widgets in `assets/`, and the uv project files. Don't edit `assets/*.html` by hand —
-they're build output.
+`main` contains only what's needed to deploy: `server.py`, the built widgets in
+`assets/`, and the uv project files. Don't edit `assets/*.html` by hand — they're
+build output.
 
 - [`dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/dev) —
   development branch: widget source (`widgets/`), local previews, and contributor notes
