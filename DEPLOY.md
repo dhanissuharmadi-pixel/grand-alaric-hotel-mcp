@@ -4,9 +4,12 @@ Notes for hosting the Grand Alaric Hotel MCP server. Current code is unauthentic
 and points at the live PHM API.
 
 ## What it is
-`server.py` - a FastMCP server exposing 6 hotel tools (search, availability, packages,
-nationalities, create_order). It proxies the live PHM API. Local testing tooling (a test
-client and Postman collections) lives on the `local-dev` branch — not needed in production.
+`server.py` - a FastMCP server exposing 8 hotel tools (search, details, availability,
+packages, nationalities, order status, create_order). It proxies the live PHM API and
+serves the ChatGPT Apps SDK widgets from `assets/` (committed build output — the widget
+source lives on the `dev` branch). Local testing tooling (a test client and Postman
+collections) lives on the `local-dev` branch. Neither branch is needed in production —
+deploy `main` as-is.
 
 ## Run it (hosted, streamable-HTTP)
 ```bash

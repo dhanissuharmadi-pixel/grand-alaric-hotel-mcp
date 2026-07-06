@@ -7,11 +7,13 @@ An MCP server for Grand Alaric Hotel properties in Bandung, Indonesia.
 | Tool | Description |
 |---|---|
 | `search_hotels` | List Grand Alaric properties |
+| `get_hotel_details` | Full profile for one hotel (amenities, gallery, policies) |
 | `check_availability` | Get available rooms and prices for a hotel and date range |
 | `check_packages` | List bookable packages (promo bundles) for a hotel and dates |
 | `check_room_packages` | List rooms and prices within a specific package |
 | `list_nationalities` | Valid nationality/phone codes for `create_order` |
 | `create_order` | Place a room or package booking; returns a payment link |
+| `check_order_status` | Payment status for an order (the widget polls this) |
 
 Dates are entered as `YYYY-MM-DD`.
 
@@ -65,9 +67,18 @@ MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
 See [`DEPLOY.md`](DEPLOY.md) for hosting, environment variables, and auth. The endpoint
 is unauthenticated by default — don't expose it publicly without a gateway or auth.
 
-## Local development & testing
+## Branches
 
-Local-only tooling — the MCP Inspector workflow, the OpenAI Agents test client
-(`openai_agent.py`), and the Postman collections — lives on the
-[`local-dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/local-dev)
-branch. None of it is needed to deploy.
+This branch (`main`) contains only what's needed to deploy: `server.py`, the built
+widgets in `assets/`, and the uv project files. Don't edit `assets/*.html` by hand —
+they're build output.
+
+- [`dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/dev) —
+  development branch: widget source (`widgets/`), local previews, and contributor notes
+  (`HANDOFF.md`). Widgets are rebuilt there (`npm run build` writes into `assets/`),
+  then shipped here with
+  `git checkout dev -- server.py assets pyproject.toml uv.lock && git commit`.
+- [`local-dev`](https://github.com/dhanissuharmadi-pixel/grand-alaric-hotel-mcp/tree/local-dev) —
+  testing tooling: MCP Inspector workflow, OpenAI Agents test client, Postman collections.
+
+None of it is needed to deploy.
