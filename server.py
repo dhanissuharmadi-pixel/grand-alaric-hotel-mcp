@@ -599,7 +599,7 @@ async def create_order(
     order = _stay_body(hotel_id, check_in, check_out, guests, cart=cart, promocode=promocode,
                        guest={"salutation": salutation, "nation_code": nation_code,
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
-    logger.info("create_order hotel=%s rooms=%s extras=%d guest=%r", hotel_id, cart_rooms, len(cart_extras), guest_name)
+    logger.info("create_order hotel=%s rooms=%s extras=%d", hotel_id, cart_rooms, len(cart_extras))
     raw = await _api("POST", "/orders", order)
     try:
         result = json.loads(raw)  # {"success", "tracking_id", "url"} → structuredContent
