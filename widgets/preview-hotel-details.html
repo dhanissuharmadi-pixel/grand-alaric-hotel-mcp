@@ -43,7 +43,25 @@
             policies: { check_in: "14:00", check_out: "12:00" },
           },
         },
-        sendFollowUpMessage: (m) => alert("→ would send to ChatGPT:\n\n" + m.prompt),
+        // Minimal callTool mock: "View rooms" → dates → rooms works offline.
+        callTool: async (name, args) => {
+          if (name === "check_availability")
+            return { structuredContent: {
+              query: { hotel_id: args.hotel_id, check_in: args.check_in_date, check_out: args.check_out_date, guests: args.guests },
+              rooms: [{
+                name: "Superior City View",
+                image: "https://picsum.photos/seed/sup/520/360",
+                images: ["https://picsum.photos/seed/sup/520/360"],
+                meta: "1 queen bed · 2 guests · 28 m²",
+                rates: [{ room_id: "SUPK-ROO", room_name_sub: "Standard rate", meal: "Without breakfast", price: 650000 }],
+              }],
+              extras: [],
+            } };
+          if (name === "list_nationalities")
+            return { structuredContent: { nationalities: [{ nation_code: "id", nationality: "Indonesia", phone_code: "+62" }] } };
+          return null;
+        },
+        openExternal: (o) => alert("openExternal →\n\n" + o.href),
       };
     </script>
     <script type="module" src="/src/hotel-details.jsx"></script>

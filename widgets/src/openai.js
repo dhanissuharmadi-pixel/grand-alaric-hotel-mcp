@@ -20,19 +20,3 @@ export async function callTool(name, args) {
   const result = await window.openai?.callTool?.(name, args);
   return result?.structuredContent ?? result ?? null;
 }
-
-// Send a message to ChatGPT as if the user typed it, to kick off the next step
-// of the booking flow (e.g. "show rooms" → check_availability, "book this room"
-// → create_order). The model drives the tool call; the widget never calls write
-// tools itself. Prefer the window.openai helper; fall back to the documented
-// ui/message postMessage.
-export function sendFollowup(text) {
-  if (window.openai?.sendFollowUpMessage) {
-    window.openai.sendFollowUpMessage({ prompt: text });
-  } else {
-    window.parent.postMessage(
-      { jsonrpc: "2.0", method: "ui/message", params: { role: "user", content: [{ type: "text", text }] } },
-      "*",
-    );
-  }
-}

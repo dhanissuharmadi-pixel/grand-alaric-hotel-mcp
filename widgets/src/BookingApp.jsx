@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useOpenAiGlobal, callTool } from "./openai.js";
 import { LoadingIndicator } from "@openai/apps-sdk-ui/components/Indicator";
 import { Badge } from "@openai/apps-sdk-ui/components/Badge";
+import { Check } from "@openai/apps-sdk-ui/components/Icon";
 import { HotelCards } from "./views/HotelCards.jsx";
 import { HotelDetail } from "./views/HotelDetail.jsx";
 import { RoomList } from "./views/RoomList.jsx";
@@ -73,22 +74,34 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
   );
 }
 
+const PAID_STATUSES = ["paid", "settlement", "capture", "success"];
+const FAILED_STATUSES = ["expired", "expire", "cancel", "cancelled", "deny", "denied", "failure", "failed"];
+const MAX_POLLS = 200; // ~10 min at 3s; after that, visibilitychange still re-checks on return
+
 function Done({ url, trackingId, hotelName }) {
-  const [paid, setPaid] = useState(false);
+  const [status, setStatus] = useState("waiting"); // waiting | paid | failed
+  const [failReason, setFailReason] = useState("");
   const intervalRef = useRef(null);
+  const pollsRef = useRef(0);
 
   const poll = async () => {
     if (!trackingId) return;
     const data = await callTool("check_order_status", { tracking_id: trackingId });
     const s = (data?.payment_status ?? data?.message ?? "").toLowerCase();
-    if (s === "paid" || s === "settlement" || s === "capture" || s === "success") {
-      setPaid(true);
+    if (PAID_STATUSES.includes(s)) {
+      setStatus("paid");
       clearInterval(intervalRef.current);
+    } else if (FAILED_STATUSES.includes(s)) {
+      setFailReason(s);
+      setStatus("failed");
+      clearInterval(intervalRef.current);
+    } else if (++pollsRef.current >= MAX_POLLS) {
+      clearInterval(intervalRef.current); // stop hammering; tab-return still polls
     }
   };
 
   useEffect(() => {
-    if (paid) return;
+    if (status !== "waiting") return;
     intervalRef.current = setInterval(poll, 3000);
     const onVisible = () => { if (document.visibilityState === "visible") poll(); };
     document.addEventListener("visibilitychange", onVisible);
@@ -96,16 +109,31 @@ function Done({ url, trackingId, hotelName }) {
       clearInterval(intervalRef.current);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [paid]);
+  }, [status]);
 
-  if (paid) {
+  if (status === "paid") {
     return (
       <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
         <div className="flex flex-col items-center gap-3 py-4 text-center">
-          <div className="text-4xl">✅</div>
-          <div className="text-lg font-semibold">Payment confirmed!</div>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15">
+            <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          </span>
+          <div className="text-lg font-semibold">Payment confirmed</div>
           {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
           <Badge color="success" size="md">Booking confirmed</Badge>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-5 text-neutral-900 dark:text-neutral-100">
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <div className="text-lg font-semibold">Payment {failReason === "expired" || failReason === "expire" ? "expired" : "not completed"}</div>
+          {hotelName && <div className="text-sm text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+          <Badge color="danger" size="md">{failReason || "failed"}</Badge>
+          <div className="text-sm text-neutral-500 dark:text-neutral-400">Ask for a new booking to try again.</div>
         </div>
       </div>
     );
@@ -155,6 +183,23 @@ export function BookingApp() {
   const [guests, setGuests] = useState(out?.query?.guests ?? 2);
 
   const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
+
+  // toolOutput can be set (or re-set) after mount — useState initializers only run
+  // once, so sync the entry state when `out` arrives late. Guards keep an in-progress
+  // flow from being clobbered by a re-emitted global.
+  useEffect(() => {
+    if (roomsEntry && !rooms) {
+      setRooms(out.rooms);
+      setRoomQuery(out.query ?? null);
+      setAvailableExtras(out.extras ?? []);
+      setHotel((h) => h ?? { hotel_id: out?.query?.hotel_id });
+      setView("rooms");
+    } else if (detailsEntry && !detail) {
+      setHotel(out.hotel);
+      setDetail(out.hotel);
+      setView("details");
+    }
+  }, [out]);
 
   const openDetails = async (h) => {
     setHotel(h);
@@ -250,9 +295,17 @@ export function BookingApp() {
           <div className="text-sm text-neutral-500 dark:text-neutral-400 text-center">This will only take a moment.</div>
         </div>
       </div>
-    ) : <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} paying={paying} error={error} />;
+    ) : <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} error={error} />;
   } else if (view === "done") {
     body = <Done url={payUrl} trackingId={trackingId} hotelName={hotelName} />;
+  } else if (out?.error) {
+    // Tool returned an error (bad dates, upstream failure) — surface it instead of a
+    // misleading "no hotels found" empty state.
+    body = (
+      <div className="mx-auto w-full max-w-[480px] rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 px-4 py-8 text-center text-sm text-neutral-600 dark:text-neutral-300">
+        {String(out.error)}
+      </div>
+    );
   } else {
     body = <HotelCards hotels={hotels} location={location} onDetails={openDetails} onViewRooms={openDates} />;
   }

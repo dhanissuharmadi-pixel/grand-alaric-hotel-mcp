@@ -21,8 +21,8 @@
             { hotel_id: "DEMO3", hotel_name: "Alaric Dago Suites", star_rating: 4, area: "Dago, Bandung", image: "https://picsum.photos/seed/dago/520/360" },
           ],
         },
-        sendFollowUpMessage: (m) => alert("→ would send to ChatGPT:\n\n" + m.prompt),
         // Mock the instant in-widget navigation. Returns structuredContent like the real tools.
+        _statusPolls: 0,
         callTool: async (name, args) => {
           await new Promise((r) => setTimeout(r, 400)); // simulate latency
           if (name === "get_hotel_details") {
@@ -107,7 +107,11 @@
             };
           }
           if (name === "create_order") {
-            return { structuredContent: { url: "https://m.grandalaric.com/pay/EXAMPLE-TOKEN", booking: { hotel_id: args.hotel_id, guest_name: args.guest_name } } };
+            return { structuredContent: { url: "https://m.grandalaric.com/pay/EXAMPLE-TOKEN", tracking_id: "demo-123", booking: { hotel_id: args.hotel_id, guest_name: args.guest_name } } };
+          }
+          if (name === "check_order_status") {
+            // Flips to Paid on the 3rd poll so the waiting → confirmed transition is testable.
+            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Paid" : "Waiting" } };
           }
           return null;
         },

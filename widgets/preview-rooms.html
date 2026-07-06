@@ -40,7 +40,24 @@
             },
           ],
         },
-        sendFollowUpMessage: (m) => alert("→ would send to ChatGPT:\n\n" + m.prompt),
+        // Mock callTool so the full in-widget flow (rooms → enhance → guest → pay →
+        // waiting → paid) runs offline. check_order_status flips to Paid on the 3rd poll.
+        _statusPolls: 0,
+        callTool: async (name, args) => {
+          console.log("callTool:", name, args);
+          if (name === "list_nationalities")
+            return { structuredContent: { nationalities: [
+              { code: "id", name: "Indonesia", phone_code: "+62" },
+              { code: "sg", name: "Singapore", phone_code: "+65" },
+              { code: "us", name: "United States", phone_code: "+1" },
+            ] } };
+          if (name === "create_order")
+            return { structuredContent: { success: true, tracking_id: "demo-123", url: "https://example.com/pay" } };
+          if (name === "check_order_status")
+            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Paid" : "Waiting" } };
+          return null;
+        },
+        openExternal: (a) => console.log("openExternal →", a.href),
       };
     </script>
     <script type="module" src="/src/room-results.jsx"></script>

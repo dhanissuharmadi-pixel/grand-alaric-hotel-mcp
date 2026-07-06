@@ -47,7 +47,7 @@ function App() {
               Complete payment
             </button>
             <div className="mt-2 text-xs text-center text-neutral-400 dark:text-neutral-500">
-              Opens the secure Grand Alaric checkout.
+              Opens the secure payment page.
             </div>
           </>
         ) : (

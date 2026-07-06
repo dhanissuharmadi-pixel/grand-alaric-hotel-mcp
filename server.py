@@ -57,10 +57,13 @@ WIDGET_MIME = "text/html+skybridge"
 
 # The widget iframe enforces a CSP; external hosts must be allowlisted or they're
 # silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
+# Every widget declares redirect_domains: the unified booking flow can reach the
+# payment step (openExternal to PAYMENT_DOMAIN) from any entry widget, not just checkout.
 WIDGETS = {
-    "hotel-list": {"resource_domains": RESOURCE_DOMAINS},
-    "room-results": {"resource_domains": RESOURCE_DOMAINS},
-    "hotel-details": {"resource_domains": RESOURCE_DOMAINS + ["https://maps.googleapis.com"]},
+    "hotel-list": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
+    "room-results": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
+    "hotel-details": {"resource_domains": RESOURCE_DOMAINS + ["https://maps.googleapis.com"],
+                      "redirect_domains": [PAYMENT_DOMAIN]},
     "checkout": {"redirect_domains": [PAYMENT_DOMAIN]},
 }
 
@@ -84,6 +87,14 @@ def _widget_html(name: str) -> str:
 
 def _err(msg: str) -> str:
     return json.dumps({"error": msg}, indent=2)
+
+
+def _qty(value: Any) -> int:
+    """Coerce a model-supplied quantity to an int ≥ 1 (bad input → 1, never a crash)."""
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _validate_date(value: str, field: str) -> date:
@@ -192,13 +203,17 @@ async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: 
             for e in items if isinstance(e, dict) and e.get("title")]
 
 
+# One client for the server's lifetime — reuses connections instead of a fresh
+# TLS handshake per call (the widget polls check_order_status every few seconds).
+_http = httpx.AsyncClient(base_url=API_BASE_URL, timeout=20)
+
+
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
     # passthrough — returns the backend's JSON verbatim.
     try:
-        async with httpx.AsyncClient(base_url=API_BASE_URL, timeout=20) as client:
-            r = await client.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
-            r.raise_for_status()
-            return r.text
+        r = await _http.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
+        r.raise_for_status()
+        return r.text
     except httpx.HTTPError as exc:
         return _err(f"Upstream API error: {exc}")
 
@@ -264,7 +279,7 @@ def room_results_widget() -> str:
 
 @mcp.resource(_widget_uri("hotel-details"), mime_type=WIDGET_MIME, meta=_widget_meta("hotel-details"))
 def hotel_details_widget() -> str:
-    """HTML shell for the hotel-details widget (rendered by search_hotels)."""
+    """HTML shell for the hotel-details widget (rendered by get_hotel_details)."""
     return _widget_html("hotel-details")
 
 
@@ -322,17 +337,20 @@ async def search_hotels(location: str) -> dict[str, Any]:
     logger.info("search_hotels location=%r", location)
     raw = await _api("GET", "/hotels")
     try:
-        result = json.loads(raw)  # {"success": ..., "hotels": [...]} → structuredContent
+        data = json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
-    # Keep hotels matching the location (name or id, case-insensitive); else show all.
+    if isinstance(data, dict) and data.get("error"):
+        return {"error": data["error"], "hotels": [], "query": {"location": location}}
+    # Keep hotels matching the location (name, id, city, or province — the fields the
+    # user is likely to say, e.g. "Bandung"); no match → show all rather than nothing.
     needle = location.lower()
-    hotels = result.get("hotels", [])
+    hotels = data.get("hotels", []) if isinstance(data, dict) else []
     matches = [h for h in hotels
-               if needle in h.get("hotel_name", "").lower() or needle in h.get("hotel_id", "").lower()] or hotels
-    result["hotels"] = [_list_item(h) for h in matches]
-    result["query"] = {"location": location}
-    return result
+               if any(needle in (h.get(k) or "").lower()
+                      for k in ("hotel_name", "hotel_id", "city_name", "province_name"))] or hotels
+    # Explicit response shape — only what the widget reads (no backend passthrough).
+    return {"hotels": [_list_item(h) for h in matches], "query": {"location": location}}
 
 
 @mcp.tool(
@@ -399,12 +417,16 @@ async def check_availability(
     logger.info("check_availability hotel=%s %s→%s guests=%d", hotel_id, check_in_date, check_out_date, guests)
     raw = await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
     try:
-        result = json.loads(raw)  # {"success": ..., "rooms": [...]} → structuredContent
+        data = json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
+    if not isinstance(data, dict) or data.get("error"):
+        return {"error": (data or {}).get("error") if isinstance(data, dict) else str(data)}
     # /rooms returns rooms already grouped by type, each with nested rates. Reshape the
     # field names to what the room widget reads (meal/conditions/benefits come straight
-    # from the API now — no deriving from room_id).
+    # from the API now — no deriving from room_id). Explicit response shape — only what
+    # the widget reads (no backend passthrough).
+    result: dict[str, Any] = {}
     result["rooms"] = [{
         "name": room.get("room_name"),
         "images": room.get("room_images") or [],
@@ -421,7 +443,7 @@ async def check_availability(
             "price": rt.get("price"),
             "original_price": rt.get("original_price"),
         } for rt in room.get("rates", [])],
-    } for room in result.get("rooms", []) if room.get("rates")]  # skip unbookable (no-rate) rooms
+    } for room in data.get("rooms", []) if room.get("rates")]  # skip unbookable (no-rate) rooms
     # add-ons for the "enhance your stay" step, and echo the query so the widget/model
     # can build an unambiguous booking message (the API response omits these).
     result["extras"] = await _enhancements(hotel_id, check_in, check_out, guests)
@@ -483,7 +505,11 @@ async def check_room_packages(
                       _stay_body(hotel_id, check_in, check_out, guests, package_code=package_code))
 
 
-@mcp.tool(annotations={"readOnlyHint": True}, structured_output=True)
+@mcp.tool(
+    meta={"openai/widgetAccessible": True},
+    annotations={"readOnlyHint": True},
+    structured_output=True,
+)
 async def list_nationalities() -> dict[str, Any]:
     """List valid nationality codes and phone codes (for create_order and the guest form)."""
     logger.info("list_nationalities")
@@ -506,15 +532,21 @@ async def list_nationalities() -> dict[str, Any]:
     return {"nationalities": nationalities}
 
 
-@mcp.tool(annotations={"readOnlyHint": True}, structured_output=True)
+@mcp.tool(
+    meta={"openai/widgetAccessible": True},
+    annotations={"readOnlyHint": True},
+    structured_output=True,
+)
 async def check_order_status(tracking_id: str) -> dict[str, Any]:
     """Check payment status for an order by tracking_id (returned by create_order)."""
-    logger.info("check_order_status tracking_id=%s", tracking_id)
+    # tracking_id goes into the URL path — reject anything that could re-target
+    # another endpoint (e.g. "../orders") through our API key.
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", tracking_id or ""):
+        return {"error": "Invalid tracking_id."}
+    logger.debug("check_order_status tracking_id=%s", tracking_id)
     raw = await _api("GET", f"/tracking-id/{tracking_id}")
     try:
-        result = json.loads(raw)
-        logger.info("check_order_status response=%s", result)
-        return result
+        return json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
 
@@ -580,7 +612,7 @@ async def create_order(
     cart_rooms = []
     for r in rooms or []:
         if isinstance(r, dict) and (rid := r.get("room_rate_id") or r.get("room_id")):
-            cart_rooms.append({"room_rate_id": rid, "qty": max(1, int(r.get("qty") or 1))})
+            cart_rooms.append({"room_rate_id": rid, "qty": _qty(r.get("qty"))})
     if not cart_rooms and room_id:
         cart_rooms.append({"room_rate_id": room_id, "qty": 1})
     if not cart_rooms:
@@ -592,7 +624,7 @@ async def create_order(
         # note the backend's misspelling: "ehance_stay_id"
         if isinstance(e, dict) and (eid := e.get("ehance_stay_id") or e.get("enhance_stay_id") or e.get("id")):
             cart_extras.append({"ehance_stay_id": str(eid), "notes": e.get("notes") or "",
-                                "qty": max(1, int(e.get("qty") or 1))})
+                                "qty": _qty(e.get("qty"))})
     if cart_extras:
         cart["enhance_stay"] = cart_extras
 
