@@ -1,8 +1,25 @@
 # Handoff — Grand Alaric Hotel MCP + ChatGPT widgets
 
 > Context dump for the next Claude session (or human). Read this first, then `server.py`
-> and `widgets/src/hotel-list.jsx`.
-> Last updated: 2026-06-26.
+> and `widgets/src/BookingApp.jsx`.
+> Last updated: 2026-07-06.
+
+## Branch layout — develop HERE, deploy from main
+
+- **`dev` (this branch)** — everything: widget source (`widgets/`), local previews, this file.
+- **`main`** — deploy-only, what the senior pulls: `server.py`, built `assets/`, uv files,
+  `README.md`/`DEPLOY.md`. **No widget source** — never develop on main.
+- **`local-dev`** — stale pre-widget testing tooling (Postman collections, `openai_agent.py`).
+
+Ship dev → main (keeps README/DEPLOY identical on both so nothing conflicts):
+```bash
+npm --prefix widgets run build            # writes assets/*.html
+git commit -am "..." && git push          # commit on dev first
+git checkout main
+git checkout dev -- server.py assets pyproject.toml uv.lock README.md DEPLOY.md
+git commit -m "ship: <what changed>" && git push
+git checkout dev
+```
 
 ## What this project is
 
