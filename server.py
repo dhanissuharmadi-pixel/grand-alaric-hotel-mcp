@@ -47,10 +47,8 @@ PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
 # so restrict this key by HTTP referrer + to the Maps Static API in Google Cloud Console.
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
-# Add-on extras ("enhance your stay"). Default OFF: the /orders API currently drops
-# the cart's enhance_stay items (verified 2026-07-07 — reservations come back rooms-only
-# under every field spelling), so offering extras would show a total the checkout never
-# charges. Flip to true once the backend actually books them.
+# Default OFF: the /orders API drops the cart's enhance_stay items (repro in HANDOFF.md),
+# so offering extras would show a total the checkout never charges.
 EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
@@ -63,8 +61,7 @@ WIDGET_MIME = "text/html+skybridge"
 
 # The widget iframe enforces a CSP; external hosts must be allowlisted or they're
 # silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
-# Every widget declares redirect_domains: the unified booking flow can reach the
-# payment step (openExternal to PAYMENT_DOMAIN) from any entry widget, not just checkout.
+# All widgets get redirect_domains — the booking flow can open the payment page from any entry.
 WIDGETS = {
     "hotel-list": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
     "room-results": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
@@ -209,8 +206,7 @@ async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: 
             for e in items if isinstance(e, dict) and e.get("title")]
 
 
-# One client for the server's lifetime — reuses connections instead of a fresh
-# TLS handshake per call (the widget polls check_order_status every few seconds).
+# Shared for the server's lifetime — the widget polls check_order_status every few seconds.
 _http = httpx.AsyncClient(base_url=API_BASE_URL, timeout=20)
 
 
@@ -348,14 +344,12 @@ async def search_hotels(location: str) -> dict[str, Any]:
         return {"error": raw}
     if isinstance(data, dict) and data.get("error"):
         return {"error": data["error"], "hotels": [], "query": {"location": location}}
-    # Keep hotels matching the location (name, id, city, or province — the fields the
-    # user is likely to say, e.g. "Bandung"); no match → show all rather than nothing.
+    # No match → show all rather than nothing.
     needle = location.lower()
     hotels = data.get("hotels", []) if isinstance(data, dict) else []
     matches = [h for h in hotels
                if any(needle in (h.get(k) or "").lower()
                       for k in ("hotel_name", "hotel_id", "city_name", "province_name"))] or hotels
-    # Explicit response shape — only what the widget reads (no backend passthrough).
     return {"hotels": [_list_item(h) for h in matches], "query": {"location": location}}
 
 
@@ -429,9 +423,7 @@ async def check_availability(
     if not isinstance(data, dict) or data.get("error"):
         return {"error": (data or {}).get("error") if isinstance(data, dict) else str(data)}
     # /rooms returns rooms already grouped by type, each with nested rates. Reshape the
-    # field names to what the room widget reads (meal/conditions/benefits come straight
-    # from the API now — no deriving from room_id). Explicit response shape — only what
-    # the widget reads (no backend passthrough).
+    # field names to what the room widget reads.
     result: dict[str, Any] = {}
     result["rooms"] = [{
         "name": room.get("room_name"),
@@ -545,8 +537,7 @@ async def list_nationalities() -> dict[str, Any]:
 )
 async def check_order_status(tracking_id: str) -> dict[str, Any]:
     """Check payment status for an order by tracking_id (returned by create_order)."""
-    # tracking_id goes into the URL path — reject anything that could re-target
-    # another endpoint (e.g. "../orders") through our API key.
+    # tracking_id is interpolated into the URL path — reject e.g. "../orders".
     if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", tracking_id or ""):
         return {"error": "Invalid tracking_id."}
     logger.debug("check_order_status tracking_id=%s", tracking_id)
