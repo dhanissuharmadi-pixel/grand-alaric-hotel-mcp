@@ -76,37 +76,49 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
 
 const PAID_STATUSES = ["paid", "settlement", "capture", "success"];
 const FAILED_STATUSES = ["expired", "expire", "cancel", "cancelled", "deny", "denied", "failure", "failed"];
-const MAX_POLLS = 200; // ~10 min at 3s; after that, visibilitychange still re-checks on return
+// Poll fast while the user is likely mid-payment, then back off: 3s for the first
+// minute, 10s for the next few, then 30s — ~85 min of coverage before the timer
+// stops. Tab-return (visibilitychange) always re-checks regardless, and browsers
+// throttle hidden-tab timers anyway, so the backoff mostly shapes the visible case.
+const MAX_POLLS = 200;
+const pollDelay = (n) => (n < 20 ? 3000 : n < 40 ? 10000 : 30000);
 
 function Done({ url, trackingId, hotelName }) {
   const [status, setStatus] = useState("waiting"); // waiting | paid | failed
   const [failReason, setFailReason] = useState("");
-  const intervalRef = useRef(null);
+  const timerRef = useRef(null);
   const pollsRef = useRef(0);
+  const settledRef = useRef(false);
 
   const poll = async () => {
-    if (!trackingId) return;
+    if (!trackingId || settledRef.current) return;
     const data = await callTool("check_order_status", { tracking_id: trackingId });
+    if (settledRef.current) return; // a concurrent poll already resolved it
     const s = (data?.payment_status ?? data?.message ?? "").toLowerCase();
     if (PAID_STATUSES.includes(s)) {
+      settledRef.current = true;
       setStatus("paid");
-      clearInterval(intervalRef.current);
     } else if (FAILED_STATUSES.includes(s)) {
+      settledRef.current = true;
       setFailReason(s);
       setStatus("failed");
-      clearInterval(intervalRef.current);
-    } else if (++pollsRef.current >= MAX_POLLS) {
-      clearInterval(intervalRef.current); // stop hammering; tab-return still polls
     }
   };
 
   useEffect(() => {
     if (status !== "waiting") return;
-    intervalRef.current = setInterval(poll, 3000);
+    const tick = async () => {
+      await poll();
+      if (settledRef.current) return;
+      const n = ++pollsRef.current;
+      if (n >= MAX_POLLS) return; // stop the timer; tab-return still re-checks
+      timerRef.current = setTimeout(tick, pollDelay(n));
+    };
+    tick(); // check immediately — matters after a widget remount mid-payment
     const onVisible = () => { if (document.visibilityState === "visible") poll(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearInterval(intervalRef.current);
+      clearTimeout(timerRef.current);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [status]);
@@ -157,6 +169,9 @@ function Done({ url, trackingId, hotelName }) {
 export function BookingApp() {
   const out = useOpenAiGlobal("toolOutput");
   const theme = useOpenAiGlobal("theme");
+  // Persisted snapshot from a previous mount of this widget instance (survives ChatGPT
+  // unmounting/rebuilding the iframe, e.g. while the user is off paying).
+  const saved = useOpenAiGlobal("widgetState");
   const hotels = out?.hotels ?? [];
   const location = out?.query?.location;
 
@@ -188,6 +203,7 @@ export function BookingApp() {
   // once, so sync the entry state when `out` arrives late. Guards keep an in-progress
   // flow from being clobbered by a re-emitted global.
   useEffect(() => {
+    if (saved?.view === "done") return; // a restored payment screen outranks entry inference
     if (roomsEntry && !rooms) {
       setRooms(out.rooms);
       setRoomQuery(out.query ?? null);
@@ -199,7 +215,19 @@ export function BookingApp() {
       setDetail(out.hotel);
       setView("details");
     }
-  }, [out]);
+  }, [out, saved]);
+
+  // Remount recovery: if a previous mount reached the payment screen, jump straight
+  // back to it so status polling resumes — otherwise a rebuilt iframe would dump the
+  // user at the entry view with no way back to their in-flight booking.
+  useEffect(() => {
+    if (saved?.view === "done" && saved.trackingId && !trackingId) {
+      setTrackingId(saved.trackingId);
+      setPayUrl(saved.payUrl ?? null);
+      setHotel((h) => h ?? (saved.hotelName ? { hotel_name: saved.hotelName } : null));
+      setView("done");
+    }
+  }, [saved]);
 
   const openDetails = async (h) => {
     setHotel(h);
@@ -261,6 +289,9 @@ export function BookingApp() {
     if (data?.url) {
       setPayUrl(data.url);
       setTrackingId(data.tracking_id ?? null);
+      // Snapshot the payment screen so a remounted iframe can restore it (kept tiny —
+      // widget state is also surfaced to the model).
+      window.openai?.setWidgetState?.({ view: "done", trackingId: data.tracking_id ?? null, payUrl: data.url, hotelName });
       window.openai?.openExternal?.({ href: data.url });
       setView("done");
     } else {

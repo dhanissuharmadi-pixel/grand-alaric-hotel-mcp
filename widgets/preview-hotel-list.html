@@ -115,7 +115,11 @@
           }
           return null;
         },
-        openExternal: (o) => alert("openExternal →\n\n" + o.href),
+        openExternal: (o) => console.log("openExternal →", o.href),
+        // Persisted widget state (survives remounts in real ChatGPT). The mock just
+        // stores it; set window.openai.widgetState + dispatch openai:set_globals to
+        // simulate a remount restore.
+        setWidgetState: (s) => { window.openai.widgetState = s; console.log("setWidgetState", s); },
       };
     </script>
     <script type="module" src="/src/hotel-list.jsx"></script>
