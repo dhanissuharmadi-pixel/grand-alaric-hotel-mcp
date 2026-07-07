@@ -47,6 +47,12 @@ PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
 # so restrict this key by HTTP referrer + to the Maps Static API in Google Cloud Console.
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
+# Add-on extras ("enhance your stay"). Default OFF: the /orders API currently drops
+# the cart's enhance_stay items (verified 2026-07-07 — reservations come back rooms-only
+# under every field spelling), so offering extras would show a total the checkout never
+# charges. Flip to true once the backend actually books them.
+EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
 # a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
 MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
@@ -446,7 +452,7 @@ async def check_availability(
     } for room in data.get("rooms", []) if room.get("rates")]  # skip unbookable (no-rate) rooms
     # add-ons for the "enhance your stay" step, and echo the query so the widget/model
     # can build an unambiguous booking message (the API response omits these).
-    result["extras"] = await _enhancements(hotel_id, check_in, check_out, guests)
+    result["extras"] = (await _enhancements(hotel_id, check_in, check_out, guests)) if EXTRAS_ENABLED else []
     result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                        "check_out": check_out.isoformat(), "guests": guests}
     return result

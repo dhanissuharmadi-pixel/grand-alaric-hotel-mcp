@@ -27,6 +27,7 @@ On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from e
 | `HOST` / `PORT` | yes (hosted) | `0.0.0.0` / platform port |
 | `MCP_ALLOWED_HOSTS` | **yes (public)** | the public host(s), e.g. `mcp.example.com`. The SDK blocks unknown `Host` headers (DNS-rebinding protection); set this to your domain, or `*` to disable the check behind a trusted proxy. |
 | `API_BASE_URL` | no | defaults to the live PHM endpoint; override only to point elsewhere. |
+| `EXTRAS_ENABLED` | no | default `false`. Add-on extras ("enhance your stay") are hidden because `POST /orders` currently drops the cart's `enhance_stay` items — reservations come back rooms-only, so the widget would show a total the checkout never charges (verified 2026-07-07, see HANDOFF.md on `dev`). Set `true` once the backend books extras. |
 
 ## Authentication - DECISION NEEDED
 The endpoint is currently **unauthenticated** — anyone who has the URL can call every
