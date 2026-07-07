@@ -76,10 +76,8 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
 
 const PAID_STATUSES = ["paid", "settlement", "capture", "success"];
 const FAILED_STATUSES = ["expired", "expire", "cancel", "cancelled", "deny", "denied", "failure", "failed"];
-// Poll fast while the user is likely mid-payment, then back off: 3s for the first
-// minute, 10s for the next few, then 30s — ~85 min of coverage before the timer
-// stops. Tab-return (visibilitychange) always re-checks regardless, and browsers
-// throttle hidden-tab timers anyway, so the backoff mostly shapes the visible case.
+// Backoff: 3s for the first minute, then 10s, then 30s — ~85 min before the timer
+// stops. Tab-return (visibilitychange) always re-checks regardless.
 const MAX_POLLS = 200;
 const pollDelay = (n) => (n < 20 ? 3000 : n < 40 ? 10000 : 30000);
 
@@ -114,7 +112,7 @@ function Done({ url, trackingId, hotelName }) {
       if (n >= MAX_POLLS) return; // stop the timer; tab-return still re-checks
       timerRef.current = setTimeout(tick, pollDelay(n));
     };
-    tick(); // check immediately — matters after a widget remount mid-payment
+    tick();
     const onVisible = () => { if (document.visibilityState === "visible") poll(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -169,8 +167,7 @@ function Done({ url, trackingId, hotelName }) {
 export function BookingApp() {
   const out = useOpenAiGlobal("toolOutput");
   const theme = useOpenAiGlobal("theme");
-  // Persisted snapshot from a previous mount of this widget instance (survives ChatGPT
-  // unmounting/rebuilding the iframe, e.g. while the user is off paying).
+  // Snapshot from a previous mount — survives ChatGPT rebuilding the iframe.
   const saved = useOpenAiGlobal("widgetState");
   const hotels = out?.hotels ?? [];
   const location = out?.query?.location;
@@ -199,9 +196,8 @@ export function BookingApp() {
 
   const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
 
-  // toolOutput can be set (or re-set) after mount — useState initializers only run
-  // once, so sync the entry state when `out` arrives late. Guards keep an in-progress
-  // flow from being clobbered by a re-emitted global.
+  // toolOutput can arrive after mount, so sync the entry state when it lands late;
+  // the guards keep an in-progress flow from being clobbered by a re-emitted global.
   useEffect(() => {
     if (saved?.view === "done") return; // a restored payment screen outranks entry inference
     if (roomsEntry && !rooms) {
@@ -217,9 +213,7 @@ export function BookingApp() {
     }
   }, [out, saved]);
 
-  // Remount recovery: if a previous mount reached the payment screen, jump straight
-  // back to it so status polling resumes — otherwise a rebuilt iframe would dump the
-  // user at the entry view with no way back to their in-flight booking.
+  // Remount recovery: jump back to the payment screen so status polling resumes.
   useEffect(() => {
     if (saved?.view === "done" && saved.trackingId && !trackingId) {
       setTrackingId(saved.trackingId);
@@ -261,8 +255,6 @@ export function BookingApp() {
 
   const continueToEnhance = async (sel) => {
     setSelections(sel);
-    // No add-ons to offer (hotel has none, or extras are disabled server-side) —
-    // go straight to guest details instead of an empty enhance step.
     setView(availableExtras.length ? "enhance" : "guest");
     if (!nationalities.length) {
       const data = await callTool("list_nationalities", {});
@@ -291,8 +283,7 @@ export function BookingApp() {
     if (data?.url) {
       setPayUrl(data.url);
       setTrackingId(data.tracking_id ?? null);
-      // Snapshot the payment screen so a remounted iframe can restore it (kept tiny —
-      // widget state is also surfaced to the model).
+      // Keep this snapshot tiny — widget state is also surfaced to the model.
       window.openai?.setWidgetState?.({ view: "done", trackingId: data.tracking_id ?? null, payUrl: data.url, hotelName });
       window.openai?.openExternal?.({ href: data.url });
       setView("done");
@@ -332,8 +323,6 @@ export function BookingApp() {
   } else if (view === "done") {
     body = <Done url={payUrl} trackingId={trackingId} hotelName={hotelName} />;
   } else if (out?.error) {
-    // Tool returned an error (bad dates, upstream failure) — surface it instead of a
-    // misleading "no hotels found" empty state.
     body = (
       <div className="mx-auto w-full max-w-[480px] rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 px-4 py-8 text-center text-sm text-neutral-600 dark:text-neutral-300">
         {String(out.error)}

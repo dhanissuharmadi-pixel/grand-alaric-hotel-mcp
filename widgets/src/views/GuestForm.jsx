@@ -68,8 +68,6 @@ function Combobox({ options, value, onChange, placeholder, selectedText, trigger
   );
 }
 
-// (No `paying` prop: the parent swaps the whole form for a spinner while the order
-// is in flight, so a disabled/processing button state here would be unreachable.)
 export function GuestForm({ hotelName, query, selections, extras, nationalities = [], onPay, onBack, error }) {
   const [salutation, setSalutation] = useState(3);
   const [name, setName] = useState("");

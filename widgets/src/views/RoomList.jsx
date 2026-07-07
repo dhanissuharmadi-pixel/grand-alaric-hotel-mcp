@@ -263,7 +263,7 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
             {pages.map((pg, i) => (
               <div key={i} className="grid w-full flex-none snap-start grid-cols-1 items-start gap-3 px-1 pb-1 sm:grid-cols-2">
                 {pg.map((room) => (
-                  // Key by first rate id — unique per room type, unlike names which can repeat.
+                  // room names can repeat; first rate id is unique per room type
                   <RoomCard key={room.rates?.[0]?.room_id ?? room.name} room={room} qty={qty} setQty={setQty} onDetails={setDetail} />
                 ))}
               </div>
