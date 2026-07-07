@@ -261,7 +261,9 @@ export function BookingApp() {
 
   const continueToEnhance = async (sel) => {
     setSelections(sel);
-    setView("enhance");
+    // No add-ons to offer (hotel has none, or extras are disabled server-side) —
+    // go straight to guest details instead of an empty enhance step.
+    setView(availableExtras.length ? "enhance" : "guest");
     if (!nationalities.length) {
       const data = await callTool("list_nationalities", {});
       setNationalities(normNationalities(data?.nationalities ?? data));
@@ -326,7 +328,7 @@ export function BookingApp() {
           <div className="text-sm text-neutral-500 dark:text-neutral-400 text-center">This will only take a moment.</div>
         </div>
       </div>
-    ) : <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView("enhance")} error={error} />;
+    ) : <GuestForm hotelName={hotelName} query={roomQuery} selections={selections} extras={extras} nationalities={nationalities} onPay={pay} onBack={() => setView(availableExtras.length ? "enhance" : "rooms")} error={error} />;
   } else if (view === "done") {
     body = <Done url={payUrl} trackingId={trackingId} hotelName={hotelName} />;
   } else if (out?.error) {

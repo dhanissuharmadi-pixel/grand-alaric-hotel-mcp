@@ -138,6 +138,21 @@ in the total but dropped). `OrderSummary` already rendered multi-room/qty.
 
 ## Known backend/config issues (NOT code bugs)
 
+- **`/orders` drops extras (verified 2026-07-07) — extras hidden behind `EXTRAS_ENABLED`.**
+  `POST /webapi/chatgpt/orders` ignores the cart's add-ons no matter how they're spelled.
+  Repro: cart `{rooms: [{room_rate_id: "SUPK-IWS312ROO", qty: 1}], enhance_stay:
+  [{ehance_stay_id: "11", qty: 1, notes: ""}]}` (room 140k + Breakfast for child 80k) →
+  `GET m.grandalaric.com/api/push-reservation/{id}/{token}` shows `amount: 140000` and
+  `product_carts` containing ONLY `rooms`. Also tested cart keys `enchance_stay`,
+  `ehance_stay`, `services`, item keys `id`/int id — all rooms-only (rsv 11647–11654).
+  Until the backend books them, the server defaults `EXTRAS_ENABLED=false`:
+  `check_availability` returns `extras: []` and the widget skips the enhance step, so
+  the in-widget total always matches the checkout charge. Flip the env once fixed —
+  the enhance UI and `create_order` wiring are done (server logs `extras=N` per order).
+- **Payment status never leaves "Waiting" after QRIS payment (2026-07-06).** User paid via
+  QRIS; `GET /tracking-id/{id}` still returned `payment_status: "Waiting"` 1.5h later, so the
+  widget's confirmed screen never fires. Likely the gateway→PHM webhook broke when the
+  checkout flow changed (WhatsApp redirect → close). Backend must sync gateway status.
 - **`hotel_cover` 404** — `/hotels` returns dead cover URLs (`.../unit/GSV_picture.jpg`). Gallery/room
   images on the same host (`booking.grandalaric.com`) work. **Backend must fix the cover path.** The
   widgets degrade broken images to a clean placeholder (icon on a gray box) instead of the `?` glyph.
