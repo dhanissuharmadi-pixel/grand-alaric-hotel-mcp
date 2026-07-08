@@ -149,10 +149,18 @@ in the total but dropped). `OrderSummary` already rendered multi-room/qty.
     guards this).
   - `EXTRAS_ENABLED` now defaults `true`; extras show and book end-to-end. Env kept only as an
     off-switch if the backend regresses.
-- **Payment status never leaves "Waiting" after QRIS payment (2026-07-06).** User paid via
-  QRIS; `GET /tracking-id/{id}` still returned `payment_status: "Waiting"` 1.5h later, so the
-  widget's confirmed screen never fires. Likely the gateway→PHM webhook broke when the
-  checkout flow changed (WhatsApp redirect → close). Backend must sync gateway status.
+- **(Fixed 2026-07-08) Payment success never updated the widget — status vocabulary mismatch.**
+  `GET /tracking-id/{id}` returns `payment_status: "Confirm"` on a successful payment (confirmed
+  via `GET {baseUrl}/simulation/success-payment/{tracking_id}`), but the widget's `PAID_STATUSES`
+  only listed paid/settlement/capture/success — so it never recognised success and sat on
+  "Waiting". Added "confirm"/"confirmed" to `PAID_STATUSES` (BookingApp.jsx); verified the widget
+  flips to "Payment confirmed". Status vocabulary observed: `Waiting` (pending), `Confirm`
+  (success/terminal), `Expired` (window closed/terminal). No `Failed` on this endpoint — a failed
+  attempt stays `Waiting` until it expires.
+  - **Testing tip:** `GET {baseUrl}/simulation/success-payment/{tracking_id}` (with the API-key
+    header) flips a Waiting order to `Confirm` — use it to test the success path without a real scan.
+  - Still open if it recurs: a *real* QRIS payment that the gateway→PHM webhook fails to record
+    would leave `/tracking-id` at `Waiting` regardless (backend sync), distinct from this fix.
 - **`hotel_cover` 404** — `/hotels` returns dead cover URLs (`.../unit/GSV_picture.jpg`). Gallery/room
   images on the same host (`booking.grandalaric.com`) work. **Backend must fix the cover path.** The
   widgets degrade broken images to a clean placeholder (icon on a gray box) instead of the `?` glyph.

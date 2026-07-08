@@ -74,7 +74,9 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
   );
 }
 
-const PAID_STATUSES = ["paid", "settlement", "capture", "success"];
+// "confirm"/"confirmed" is what the PHM backend returns on a successful payment
+// (verified via /simulation/success-payment); the rest cover common gateway wordings.
+const PAID_STATUSES = ["confirm", "confirmed", "paid", "settlement", "capture", "success"];
 const FAILED_STATUSES = ["expired", "expire", "cancel", "cancelled", "deny", "denied", "failure", "failed"];
 // Backoff: 3s for the first minute, then 10s, then 30s — ~85 min before the timer
 // stops. Tab-return (visibilitychange) always re-checks regardless.

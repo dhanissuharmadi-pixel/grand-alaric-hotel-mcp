@@ -41,7 +41,8 @@
           ],
         },
         // Mock callTool so the full in-widget flow (rooms → enhance → guest → pay →
-        // waiting → paid) runs offline. check_order_status flips to Paid on the 3rd poll.
+        // waiting → confirmed) runs offline. check_order_status flips to the backend's
+        // real success wording "Confirm" on the 3rd poll.
         _statusPolls: 0,
         callTool: async (name, args) => {
           console.log("callTool:", name, args);
@@ -54,7 +55,7 @@
           if (name === "create_order")
             return { structuredContent: { success: true, tracking_id: "demo-123", url: "https://example.com/pay" } };
           if (name === "check_order_status")
-            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Paid" : "Waiting" } };
+            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Confirm" : "Waiting" } };
           return null;
         },
         openExternal: (a) => console.log("openExternal →", a.href),

@@ -110,8 +110,8 @@
             return { structuredContent: { url: "https://m.grandalaric.com/pay/EXAMPLE-TOKEN", tracking_id: "demo-123", booking: { hotel_id: args.hotel_id, guest_name: args.guest_name } } };
           }
           if (name === "check_order_status") {
-            // Flips to Paid on the 3rd poll so the waiting → confirmed transition is testable.
-            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Paid" : "Waiting" } };
+            // Flips to the backend's real success wording "Confirm" on the 3rd poll.
+            return { structuredContent: { success: true, payment_status: ++window.openai._statusPolls >= 3 ? "Confirm" : "Waiting" } };
           }
           return null;
         },
