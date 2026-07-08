@@ -138,32 +138,17 @@ in the total but dropped). `OrderSummary` already rendered multi-room/qty.
 
 ## Known backend/config issues (NOT code bugs)
 
-- **`/orders` drops extras — no handler for `cart.enhance_stay` (verified 2026-07-07/08).**
-  `POST /webapi/chatgpt/orders` parses `cart.rooms` and ignores everything else in the cart.
-  Not a field-name typo — tested **7 placements**, all rooms-only: cart siblings
-  `enhance_stay` / `enchance_stay` / `ehance_stay` / `services`, nested `rooms[].additional`,
-  nested `rooms[].enhance_stay`, top-level `additional`. Every one returns `amount` unchanged
-  and `product_carts` = rooms only, with each room's `additional: []` left empty (rsv 11647+).
-
-  **Backend fix (all on `POST /orders`, mirror what it already does for rooms):**
-  1. Read `cart.enhance_stay[]` from the request body (we already send it — each item is
-     `{ehance_stay_id, qty, notes}`).
-  2. Persist each onto the reservation so it appears in the `push-reservation` response —
-     populate the room's `additional[]` (or a `product_carts.enhance_stay[]` bucket).
-  3. Add `price × qty` into `amount` AND `amount_to_pay.full_amount` so the payment charges it.
-
-  **Acceptance test:** order room `SUPK-EAT313ROO` + `enhance_stay_id: 7` ("Drop off to airport",
-  1.5M) → reservation `amount` jumps by 1.5M and the transfer shows as a line item. Today it
-  stays flat.
-
-  **Naming to settle:** `GET /enchance-stay` returns items keyed `enhance_stay_id` (correct
-  spelling); our cart sends `ehance_stay_id` (misspelled, from the original contract). Agree on
-  one — then it's a one-line change in `server.py` `create_order`.
-
-  Until fixed, the server defaults `EXTRAS_ENABLED=false`: `check_availability` returns
-  `extras: []` and the widget skips the enhance step, so the in-widget total always matches the
-  checkout charge. Flip the env once fixed — the enhance UI and `create_order` wiring are done
-  (server logs `extras=N` per order).
+- **(Fixed 2026-07-08) `/orders` books extras.** For ~a day the handler parsed `cart.rooms` and
+  ignored `cart.enhance_stay` (tested 7 placements, all rooms-only). Backend fixed it; verified
+  against the live API: room-only `amount 59.400`, same room + "Drop off to airport" (1.5M) ->
+  `amount 1.559.400` (delta exactly 1.5M), and a new `product_carts.enhancestay` bucket appears
+  in the reservation.
+  - The handler books extras ONLY under the key `ehance_stay_id` (the historical misspelling) —
+    which is exactly what `create_order` already sends. The correct spelling `enhance_stay_id`
+    is dropped. Do NOT "fix" the spelling in `server.py` or extras break again (inline comment
+    guards this).
+  - `EXTRAS_ENABLED` now defaults `true`; extras show and book end-to-end. Env kept only as an
+    off-switch if the backend regresses.
 - **Payment status never leaves "Waiting" after QRIS payment (2026-07-06).** User paid via
   QRIS; `GET /tracking-id/{id}` still returned `payment_status: "Waiting"` 1.5h later, so the
   widget's confirmed screen never fires. Likely the gateway→PHM webhook broke when the

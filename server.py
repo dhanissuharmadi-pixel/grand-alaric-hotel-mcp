@@ -47,9 +47,10 @@ PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
 # so restrict this key by HTTP referrer + to the Maps Static API in Google Cloud Console.
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
-# Default OFF: the /orders API drops the cart's enhance_stay items (repro in HANDOFF.md),
-# so offering extras would show a total the checkout never charges.
-EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+# /orders books enhance_stay items as of 2026-07-08 (verified: extra's price lands in the
+# reservation total, checkout charges it). Set EXTRAS_ENABLED=false to hide extras if the
+# backend ever regresses.
+EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 
 # Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
 # a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
@@ -618,7 +619,9 @@ async def create_order(
     cart: dict[str, Any] = {"rooms": cart_rooms}
     cart_extras = []
     for e in enhance_stay or []:
-        # note the backend's misspelling: "ehance_stay_id"
+        # The /orders handler ONLY books extras under the key "ehance_stay_id" (the backend's
+        # misspelling, verified 2026-07-08). The correct spelling "enhance_stay_id" is silently
+        # dropped and the guest is never charged for the add-on. DO NOT "correct" it here.
         if isinstance(e, dict) and (eid := e.get("ehance_stay_id") or e.get("enhance_stay_id") or e.get("id")):
             cart_extras.append({"ehance_stay_id": str(eid), "notes": e.get("notes") or "",
                                 "qty": _qty(e.get("qty"))})
