@@ -29,6 +29,22 @@ On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from e
 | `API_BASE_URL` | no | defaults to the live PHM endpoint; override only to point elsewhere. |
 | `EXTRAS_ENABLED` | no | default `true` — add-on extras ("enhance your stay") show and book end-to-end (backend fixed 2026-07-08). Set `false` to hide extras if the backend ever regresses. |
 
+## Verify a deploy actually works (do this before connecting ChatGPT)
+The server logs a loud `ERROR` at startup for each of the config mistakes that cause a
+"deployed but doesn't work" (missing key, loopback host, missing `MCP_ALLOWED_HOSTS`) —
+**check the startup logs first**. Then confirm the endpoint end-to-end:
+```bash
+curl -s -X POST https://<your-domain>/mcp \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}'
+```
+- Returns `serverInfo` → working; connect the connector at `https://<your-domain>/mcp`.
+- Connection refused → `MCP_TRANSPORT` not `streamable-http`, or `HOST` not `0.0.0.0`.
+- `400` / invalid host → `MCP_ALLOWED_HOSTS` missing your domain.
+- Connects but tools error → `API_KEY` unset.
+
+See `.env.example` for the full, copy-paste env template.
+
 ## Authentication - DECISION NEEDED
 The endpoint is currently **unauthenticated** — anyone who has the URL can call every
 tool, including `create_order`. which needs to be changed for public permanent deployment
