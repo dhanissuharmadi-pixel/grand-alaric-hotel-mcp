@@ -207,8 +207,15 @@ async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: 
             for e in items if isinstance(e, dict) and e.get("title")]
 
 
-# Shared for the server's lifetime — the widget polls check_order_status every few seconds.
-_http = httpx.AsyncClient(base_url=API_BASE_URL, timeout=20)
+# One client for the whole process — pools/reuses connections instead of a TLS handshake
+# per call, which is what lets the server scale when many widgets poll concurrently.
+# Explicit limits give predictable backpressure under load; connect timeout keeps a slow
+# upstream from tying up a request for the full read window.
+_http = httpx.AsyncClient(
+    base_url=API_BASE_URL,
+    timeout=httpx.Timeout(20.0, connect=10.0),
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+)
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
@@ -646,10 +653,31 @@ async def create_order(
     return result
 
 
+def _check_config(transport: str, host: str) -> None:
+    """Turn the silent deploy footguns into loud, actionable log lines. Every one of
+    these has caused a "deployed but doesn't work" with zero error otherwise."""
+    if not API_KEY:
+        logger.error("API_KEY is empty — the server will start but EVERY tool call will fail "
+                     "upstream. Set API_KEY (or GRAND_ALARIC_API_KEY) as a platform secret.")
+    hosted = transport in ("streamable-http", "sse")
+    if hosted and host in ("127.0.0.1", "localhost"):
+        logger.error("HOST=%s with transport=%s — bound to loopback, so a proxy/load balancer "
+                     "CANNOT reach it. Set HOST=0.0.0.0 when hosting.", host, transport)
+    if hosted and not MCP_ALLOWED_HOSTS:
+        logger.error("transport=%s but MCP_ALLOWED_HOSTS is unset — the SDK's DNS-rebinding "
+                     "protection will REJECT every request to your public domain (looks up but "
+                     "won't connect). Set MCP_ALLOWED_HOSTS=your.domain (or '*' behind a trusted proxy).",
+                     transport)
+    if not hosted and transport == "stdio" and (os.getenv("HOST") or os.getenv("PORT")):
+        logger.warning("HOST/PORT are set but transport=stdio (the default) — no HTTP server will "
+                       "start. Set MCP_TRANSPORT=streamable-http to serve over HTTP.")
+
+
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     mcp.settings.host = os.getenv("HOST", "127.0.0.1")  # set 0.0.0.0 when hosting
     mcp.settings.port = int(os.getenv("PORT", "8000"))  # host/port only used by sse/http transports
     # note: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
     logger.info("Starting %s MCP — transport=%s host=%s port=%d", HOTEL_NAME, transport, mcp.settings.host, mcp.settings.port)
+    _check_config(transport, mcp.settings.host)
     mcp.run(transport=transport)
