@@ -1,15 +1,13 @@
 import { useState } from "react";
 import { OrderSummary } from "./OrderSummary.jsx";
 
-// ponytail: only Mr=3 is documented; Mrs/Ms codes are guessed. Confirm against the
-// backend and fix these values before relying on the title.
+// ponytail: Mrs/Ms codes are guessed; only Mr=3 is confirmed. Verify against the backend.
 const TITLES = [
   { label: "Mr.", value: 3 },
   { label: "Mrs.", value: 2 },
   { label: "Ms.", value: 1 },
 ];
 
-// /nationality items vary in field names — read defensively.
 function natCode(n) { return n.nation_code ?? n.code ?? n.id ?? ""; }
 function natName(n) { return n.nationality ?? n.name ?? n.country ?? natCode(n); }
 function natPhone(n) { return n.phone_code ?? n.phonecode ?? n.calling_code ?? n.phone ?? ""; }
@@ -20,9 +18,6 @@ const ok = "border-black/10 dark:border-white/15";
 const bad = "border-red-400 dark:border-red-500";
 const errCls = "mt-1 text-[13px] text-red-600 dark:text-red-400";
 
-// Type-to-filter dropdown — replaces a 176-option native <select> so the guest can find a
-// country by typing instead of scrolling. `selectedText` is shown when collapsed; options
-// match on label (country) or hint (phone code).
 function Combobox({ options, value, onChange, placeholder, selectedText, triggerClassName, wrapperClassName = "" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");

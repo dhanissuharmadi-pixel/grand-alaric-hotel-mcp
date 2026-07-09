@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Icon, idr } from "./icons.jsx";
 
-const AMEN_PREVIEW = 8; // collapse long facility lists to this many, with a "show all" toggle
+const AMEN_PREVIEW = 8;
 
 function Section({ title, children }) {
   return (
@@ -50,8 +50,6 @@ function normAmenities(list) {
   );
 }
 
-// Prefer the backend's PNG icon (dark line art — inverted for dark mode); fall back to a
-// built-in SVG if there's no URL or the image fails to load.
 function AmenityIcon({ iconUrl, icon, className }) {
   const [failed, setFailed] = useState(false);
   if (iconUrl && !failed) {
@@ -60,8 +58,6 @@ function AmenityIcon({ iconUrl, icon, className }) {
   return <Icon name={icon} className={`${className} text-neutral-500 dark:text-neutral-400`} />;
 }
 
-// Presentational hotel-details card. `onViewRooms` fires when the footer button is
-// tapped; `onBack` (optional) renders a back chevron for in-widget navigation.
 export function HotelDetail({ hotel, onViewRooms, onBack }) {
   const [showAllAmen, setShowAllAmen] = useState(false);
   hotel = hotel ?? {};

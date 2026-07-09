@@ -52,8 +52,6 @@ function HotelCard({ hotel, onDetails, onViewRooms }) {
   );
 }
 
-// Presentational hotel-list carousel. `onDetails(hotel)` and `onViewRooms(hotel)` fire
-// per card; the controller decides whether that's an instant callTool or a model handoff.
 export function HotelCards({ hotels, location, onDetails, onViewRooms }) {
   const scroller = useRef(null);
   const scroll = (dx) => scroller.current?.scrollBy({ left: dx, behavior: "smooth" });

@@ -5,7 +5,6 @@ import { Caret, Icon, idr } from "./icons.jsx";
 const ROOMS_PER_PAGE = 2;
 
 function Stepper({ value, onDec, onInc, canInc = true }) {
-  // `canInc` is gated by the room type's remaining availability (cart qty cap).
   return (
     <div className="flex items-center overflow-hidden rounded-lg border border-black/10 dark:border-white/15">
       <button type="button" aria-label="Decrease" onClick={onDec} disabled={value === 0} className="h-9 w-9 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">−</button>
@@ -79,7 +78,6 @@ function Rate({ rate, qty, onInc, onDec, canInc }) {
 }
 
 function RoomCard({ room, qty, setQty, onDetails }) {
-  // Quantity across this room type's rates can't exceed its available count.
   const used = room.rates.reduce((s, rt) => s + (qty[rt.room_id] || 0), 0);
   const available = room.available == null ? Infinity : Number(room.available);
   const canInc = used < available;
@@ -174,9 +172,6 @@ function NavButton({ side, onClick, disabled }) {
   );
 }
 
-// Quantity-mode room list: each rate has a stepper; a footer shows the running total and
-// Continue → onContinue(selections, total). Tapping a card opens an in-place room-detail
-// view (image, facilities, description, rates) sharing the same quantity state.
 export function RoomList({ rooms, title = "Available rooms", subtitle, onContinue, onBack, onChangeDates }) {
   const groups = rooms ?? [];
   const pages = [];
@@ -186,7 +181,6 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
   const [page, setPage] = useState(0);
   const [qty, setQtyState] = useState({});
   const [detail, setDetail] = useState(null);
-  // Multi-room: keep a quantity per rate id. Availability is capped per room type in RoomCard.
   const setQty = (id, n) =>
     setQtyState((cur) => {
       const next = { ...cur };

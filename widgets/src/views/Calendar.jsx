@@ -54,9 +54,6 @@ function Month({ year, month, checkin, checkout, today, onPick }) {
   );
 }
 
-// Two-month date-range picker. value = { checkin, checkout } (ISO strings); onChange
-// gets the same shape. Picking a start clears the end; picking an end after the start
-// completes the range; picking before the start resets the start.
 export function Calendar({ value, onChange }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

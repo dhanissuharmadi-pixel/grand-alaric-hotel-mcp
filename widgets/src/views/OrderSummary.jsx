@@ -1,6 +1,5 @@
 import { idr } from "./icons.jsx";
 
-// Selections: [{ room_id, roomName, rateLabel, price, qty }]. extras: [{ id, name, price, qty }].
 export function selectionsTotal(selections, extras = []) {
   const rooms = selections.reduce((s, r) => s + r.price * r.qty, 0);
   const add = extras.reduce((s, e) => s + e.price * (e.qty || 1), 0);

@@ -11,16 +11,8 @@ import { GuestForm } from "./views/GuestForm.jsx";
 import { Calendar } from "./views/Calendar.jsx";
 import "./index.css";
 
-// Unified hotel + booking flow controller. Every step runs in-widget via callTool —
-// no model turn — so screens appear instantly:
-//   list → details → dates → rooms (qty) → enhance → guest → pay (create_order).
-// The starting screen is INFERRED from the tool output shape, so the SAME controller
-// drives all three entry tools:
-//   search_hotels   → out.hotels  → start at "list"
-//   get_hotel_details → out.hotel → start at "details"
-//   check_availability → out.rooms → start at "rooms"
-// This means no matter which tool the model calls first, the user can complete the
-// whole booking in-widget. Pay sends the full cart to the cart-based create_order.
+// Booking flow controller. Infers the entry screen from tool output shape
+// (out.hotels→list, out.hotel→details, out.rooms→rooms), then drives the rest in-widget.
 
 function normNationalities(x) {
   if (Array.isArray(x)) return x;
@@ -78,8 +70,6 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
 // (verified via /simulation/success-payment); the rest cover common gateway wordings.
 const PAID_STATUSES = ["confirm", "confirmed", "paid", "settlement", "capture", "success"];
 const FAILED_STATUSES = ["expired", "expire", "cancel", "cancelled", "deny", "denied", "failure", "failed"];
-// Backoff: 3s for the first minute, then 10s, then 30s — ~85 min before the timer
-// stops. Tab-return (visibilitychange) always re-checks regardless.
 const MAX_POLLS = 200;
 const pollDelay = (n) => (n < 20 ? 3000 : n < 40 ? 10000 : 30000);
 
@@ -93,7 +83,7 @@ function Done({ url, trackingId, hotelName }) {
   const poll = async () => {
     if (!trackingId || settledRef.current) return;
     const data = await callTool("check_order_status", { tracking_id: trackingId });
-    if (settledRef.current) return; // a concurrent poll already resolved it
+    if (settledRef.current) return;
     const s = (data?.payment_status ?? data?.message ?? "").toLowerCase();
     if (PAID_STATUSES.includes(s)) {
       settledRef.current = true;
@@ -111,7 +101,7 @@ function Done({ url, trackingId, hotelName }) {
       await poll();
       if (settledRef.current) return;
       const n = ++pollsRef.current;
-      if (n >= MAX_POLLS) return; // stop the timer; tab-return still re-checks
+      if (n >= MAX_POLLS) return;
       timerRef.current = setTimeout(tick, pollDelay(n));
     };
     tick();
@@ -169,12 +159,10 @@ function Done({ url, trackingId, hotelName }) {
 export function BookingApp() {
   const out = useOpenAiGlobal("toolOutput");
   const theme = useOpenAiGlobal("theme");
-  // Snapshot from a previous mount — survives ChatGPT rebuilding the iframe.
-  const saved = useOpenAiGlobal("widgetState");
+  const saved = useOpenAiGlobal("widgetState"); // survives ChatGPT rebuilding the iframe
   const hotels = out?.hotels ?? [];
   const location = out?.query?.location;
 
-  // Infer the entry point from the tool output shape (see header comment).
   const roomsEntry = Array.isArray(out?.rooms) && !out?.hotels;       // check_availability
   const detailsEntry = !!out?.hotel && !out?.hotels && !roomsEntry;   // get_hotel_details
 
@@ -198,10 +186,9 @@ export function BookingApp() {
 
   const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
 
-  // toolOutput can arrive after mount, so sync the entry state when it lands late;
-  // the guards keep an in-progress flow from being clobbered by a re-emitted global.
+  // sync entry state if toolOutput arrives after mount; guards protect an in-progress flow.
   useEffect(() => {
-    if (saved?.view === "done") return; // a restored payment screen outranks entry inference
+    if (saved?.view === "done") return;
     if (roomsEntry && !rooms) {
       setRooms(out.rooms);
       setRoomQuery(out.query ?? null);
@@ -215,7 +202,7 @@ export function BookingApp() {
     }
   }, [out, saved]);
 
-  // Remount recovery: jump back to the payment screen so status polling resumes.
+  // remount recovery: resume the payment screen so polling continues.
   useEffect(() => {
     if (saved?.view === "done" && saved.trackingId && !trackingId) {
       setTrackingId(saved.trackingId);
@@ -251,7 +238,7 @@ export function BookingApp() {
     if (!data || data.error) return setError(data?.error || "Couldn't load rooms. Please try again.");
     setRooms(data.rooms ?? []);
     setRoomQuery(data.query ?? null);
-    setAvailableExtras(data.extras ?? data.services ?? []); // add-ons when the API provides them
+    setAvailableExtras(data.extras ?? data.services ?? []);
     setView("rooms");
   };
 
@@ -285,7 +272,6 @@ export function BookingApp() {
     if (data?.url) {
       setPayUrl(data.url);
       setTrackingId(data.tracking_id ?? null);
-      // Keep this snapshot tiny — widget state is also surfaced to the model.
       window.openai?.setWidgetState?.({ view: "done", trackingId: data.tracking_id ?? null, payUrl: data.url, hotelName });
       window.openai?.openExternal?.({ href: data.url });
       setView("done");

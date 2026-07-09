@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-load_dotenv()  # read .env if present
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,20 +19,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("hotel-mcp")
 
-# ---------------------------------------------------------------------------
-# Config — all hotel-specific values come from .env so the server white-labels
-# to any property without touching code.
-# ---------------------------------------------------------------------------
+# Config — all hotel-specific values come from .env (see .env.example).
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api6.alarichotels.com/webapi/chatgpt")
-# API_KEY accepts the generic name or the legacy Grand Alaric name for back-compat.
 API_KEY = os.getenv("API_KEY") or os.getenv("GRAND_ALARIC_API_KEY", "")
 API_KEY_HEADER = os.getenv("API_KEY_HEADER", "phm-chat-api-key")
 
 HOTEL_NAME = os.getenv("HOTEL_NAME", "Grand Alaric Hotel Assistant")
 HOTEL_LOCATION = os.getenv("HOTEL_LOCATION", "Bandung, Indonesia")
 
-# Primary hotel domain — drives widget CSP resource_domains and widgetDomain.
-# For multiple domains, set RESOURCE_DOMAINS as a comma-separated list instead.
 HOTEL_DOMAIN = os.getenv("HOTEL_DOMAIN", "grandalaric.com")
 _resource_domains_env = os.getenv("RESOURCE_DOMAINS", "")
 RESOURCE_DOMAINS = (
@@ -41,28 +35,17 @@ RESOURCE_DOMAINS = (
     else [f"https://*.{HOTEL_DOMAIN}"]
 )
 PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
-
-# Google Static Maps key for the hotel-details Location thumbnail. Read from env (never
-# committed — the repo is public). Embedded in the static-map image URL the widget loads,
-# so restrict this key by HTTP referrer + to the Maps Static API in Google Cloud Console.
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
-# /orders books enhance_stay items as of 2026-07-08 (verified: extra's price lands in the
-# reservation total, checkout charges it). Set EXTRAS_ENABLED=false to hide extras if the
-# backend ever regresses.
+# false hides add-ons if the backend stops booking them (see .env.example).
 EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 
-# Public hosting: the SDK blocks unknown Host headers (DNS-rebinding protection). Behind
-# a tunnel/proxy, list the public host(s) here, or use "*" to disable the check entirely.
 MCP_ALLOWED_HOSTS = [h for h in os.getenv("MCP_ALLOWED_HOSTS", "").replace(",", " ").split() if h]
 
-# Apps SDK widgets: self-contained HTML built from widgets/ (see widgets/README.md).
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 WIDGET_MIME = "text/html+skybridge"
 
-# The widget iframe enforces a CSP; external hosts must be allowlisted or they're
-# silently blocked. ChatGPT reads these OpenAI-specific keys (snake_case sub-fields).
-# All widgets get redirect_domains — the booking flow can open the payment page from any entry.
+# widget CSP allowlist — ChatGPT blocks external hosts not listed here.
 WIDGETS = {
     "hotel-list": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
     "room-results": {"resource_domains": RESOURCE_DOMAINS, "redirect_domains": [PAYMENT_DOMAIN]},
@@ -84,10 +67,6 @@ def _widget_meta(name: str) -> dict:
 def _widget_html(name: str) -> str:
     return (ASSETS_DIR / f"{name}.html").read_text(encoding="utf-8")
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _err(msg: str) -> str:
     return json.dumps({"error": msg}, indent=2)
@@ -125,8 +104,6 @@ def _stay_body(hotel_id: str, check_in: date, check_out: date, guests: int, **ex
             "adult": guests, "child": 0, "promocode": "", **extra}
 
 
-# Map a facility name to one of the hotel-details widget's built-in SVG icon names
-# (the API gives PNG icon URLs the widget can't use). Unmatched → "check".
 _FACILITY_ICONS = {
     "wifi": "wifi", "wi-fi": "wifi", "lan": "wifi", "internet": "wifi",
     "pool": "pool", "park": "parking", "valet": "parking",
@@ -172,8 +149,7 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if info.get("images"):
         h["gallery"] = info["images"]
     if info.get("facilities"):
-        # Prefer the API's own per-facility PNG icon (specific + correct for all 52);
-        # keep the keyword→SVG mapping as a fallback for when no icon URL is present.
+        # API PNG icon when present; keyword→SVG mapping as fallback.
         h["amenities"] = [{"label": f["name"], "icon": _facility_icon(f["name"]),
                            "icon_url": f.get("icon"), "available": True}
                           for f in info["facilities"] if f.get("name")]
@@ -184,7 +160,6 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
         h["price_from"] = info["starting_price"]
     lat, lng = info.get("hotel_loc_lat"), info.get("hotel_loc_long")
     if lat and lng and GOOGLE_MAPS_API_KEY:
-        # Static map centered on the hotel; the widget overlays its own pin at center.
         h["map_image"] = (f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lng}"
                           f"&zoom=15&size=640x160&scale=2&key={GOOGLE_MAPS_API_KEY}")
     policies = {k: v[:5] for k, v in (("check_in", info.get("checkintime")),
@@ -207,10 +182,7 @@ async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: 
             for e in items if isinstance(e, dict) and e.get("title")]
 
 
-# One client for the whole process — pools/reuses connections instead of a TLS handshake
-# per call, which is what lets the server scale when many widgets poll concurrently.
-# Explicit limits give predictable backpressure under load; connect timeout keeps a slow
-# upstream from tying up a request for the full read window.
+# Shared client → connection pooling under concurrent widget polling.
 _http = httpx.AsyncClient(
     base_url=API_BASE_URL,
     timeout=httpx.Timeout(20.0, connect=10.0),
@@ -219,7 +191,6 @@ _http = httpx.AsyncClient(
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
-    # passthrough — returns the backend's JSON verbatim.
     try:
         r = await _http.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
         r.raise_for_status()
@@ -229,8 +200,7 @@ async def _api(method: str, path: str, json_body: dict | None = None) -> str:
 
 
 def _transport_security_kwargs() -> dict:
-    """Allow the public Host when hosted behind a tunnel/proxy. Default (no env) keeps
-    the SDK's DNS-rebinding protection on, localhost-only — unchanged for local dev."""
+    """Allow the public Host when hosted; no env = SDK's localhost-only default."""
     if not MCP_ALLOWED_HOSTS:
         return {}
     from mcp.server.transport_security import TransportSecuritySettings
@@ -242,9 +212,6 @@ def _transport_security_kwargs() -> dict:
     return {"transport_security": TransportSecuritySettings(allowed_hosts=MCP_ALLOWED_HOSTS, allowed_origins=origins)}
 
 
-# ---------------------------------------------------------------------------
-# MCP server
-# ---------------------------------------------------------------------------
 mcp = FastMCP(
     HOTEL_NAME,
     instructions=(
@@ -271,10 +238,6 @@ mcp = FastMCP(
 )
 
 
-# ---------------------------------------------------------------------------
-# Widgets (Apps SDK UI rendered inside ChatGPT)
-# ---------------------------------------------------------------------------
-
 @mcp.resource(_widget_uri("hotel-list"), mime_type=WIDGET_MIME, meta=_widget_meta("hotel-list"))
 def hotel_list_widget() -> str:
     """HTML shell for the hotel-list widget (rendered by search_hotels)."""
@@ -299,9 +262,8 @@ def checkout_widget() -> str:
     return _widget_html("checkout")
 
 
-# ChatGPT reads a widget's CSP/domain config from the resource *template*, not the
-# concrete resource. FastMCP only auto-creates templates for parameterized URIs, so
-# register each static widget as a template explicitly (mirrors the pizzaz example).
+# ChatGPT reads widget CSP/domain config from the resource *template*, so register
+# each static widget as a template explicitly (FastMCP only auto-creates parameterized ones).
 import mcp.types as _types  # noqa: E402
 
 
@@ -318,10 +280,6 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
         for name in WIDGETS
     ]
 
-
-# ---------------------------------------------------------------------------
-# Tools
-# ---------------------------------------------------------------------------
 
 @mcp.tool(
     meta={
@@ -352,7 +310,6 @@ async def search_hotels(location: str) -> dict[str, Any]:
         return {"error": raw}
     if isinstance(data, dict) and data.get("error"):
         return {"error": data["error"], "hotels": [], "query": {"location": location}}
-    # No match → show all rather than nothing.
     needle = location.lower()
     hotels = data.get("hotels", []) if isinstance(data, dict) else []
     matches = [h for h in hotels
@@ -430,8 +387,6 @@ async def check_availability(
         return {"error": raw}
     if not isinstance(data, dict) or data.get("error"):
         return {"error": (data or {}).get("error") if isinstance(data, dict) else str(data)}
-    # /rooms returns rooms already grouped by type, each with nested rates. Reshape the
-    # field names to what the room widget reads.
     result: dict[str, Any] = {}
     result["rooms"] = [{
         "name": room.get("room_name"),
@@ -439,7 +394,7 @@ async def check_availability(
         "image": (room.get("room_images") or [None])[0],
         "description": _strip_html(room.get("room_desc", "")),
         "meta": room.get("room_info"),
-        "available": room.get("room_available"),  # max bookable of this room type (cart qty cap)
+        "available": room.get("room_available"),
         "rates": [{
             "room_id": rt.get("room_rate_id"),
             "room_name_sub": rt.get("room_rate"),
@@ -449,9 +404,7 @@ async def check_availability(
             "price": rt.get("price"),
             "original_price": rt.get("original_price"),
         } for rt in room.get("rates", [])],
-    } for room in data.get("rooms", []) if room.get("rates")]  # skip unbookable (no-rate) rooms
-    # add-ons for the "enhance your stay" step, and echo the query so the widget/model
-    # can build an unambiguous booking message (the API response omits these).
+    } for room in data.get("rooms", []) if room.get("rates")]
     result["extras"] = (await _enhancements(hotel_id, check_in, check_out, guests)) if EXTRAS_ENABLED else []
     result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                        "check_out": check_out.isoformat(), "guests": guests}
@@ -524,9 +477,7 @@ async def list_nationalities() -> dict[str, Any]:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
-    # The backend nests the list under "hotels" (a quirk) and uses nation_name/country_name/
-    # phone_code. Normalize to stable widget keys {code, name, phone_code} so the guest form
-    # reads it the same regardless of upstream field names.
+    # backend nests the list under "hotels" (quirk); normalize to {code, name, phone_code}.
     items = data if isinstance(data, list) else (
         data.get("nationalities") or data.get("hotels") or data.get("data") or data.get("list") or [])
     nationalities = [
@@ -626,9 +577,8 @@ async def create_order(
     cart: dict[str, Any] = {"rooms": cart_rooms}
     cart_extras = []
     for e in enhance_stay or []:
-        # The /orders handler ONLY books extras under the key "ehance_stay_id" (the backend's
-        # misspelling, verified 2026-07-08). The correct spelling "enhance_stay_id" is silently
-        # dropped and the guest is never charged for the add-on. DO NOT "correct" it here.
+        # /orders books extras ONLY under the misspelled key "ehance_stay_id"; the correct
+        # spelling is silently dropped. DO NOT "correct" it or extras stop booking.
         if isinstance(e, dict) and (eid := e.get("ehance_stay_id") or e.get("enhance_stay_id") or e.get("id")):
             cart_extras.append({"ehance_stay_id": str(eid), "notes": e.get("notes") or "",
                                 "qty": _qty(e.get("qty"))})
@@ -641,21 +591,18 @@ async def create_order(
     logger.info("create_order hotel=%s rooms=%s extras=%d", hotel_id, cart_rooms, len(cart_extras))
     raw = await _api("POST", "/orders", order)
     try:
-        result = json.loads(raw)  # {"success", "tracking_id", "url"} → structuredContent
+        result = json.loads(raw)
     except json.JSONDecodeError:
         return {"error": raw}
-    # Surface the backend's own validation/limit message (e.g. "Cart is required") to the widget.
     if isinstance(result, dict) and result.get("success") is False and not result.get("error"):
         result["error"] = result.get("message") or "Booking failed. Please review your selection."
-    # echo booking essentials so the widget can show a summary (the API response omits them)
     result["booking"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                          "check_out": check_out.isoformat(), "guest_name": guest_name}
     return result
 
 
 def _check_config(transport: str, host: str) -> None:
-    """Turn the silent deploy footguns into loud, actionable log lines. Every one of
-    these has caused a "deployed but doesn't work" with zero error otherwise."""
+    """Log a loud error for each silent deploy footgun (missing key/host/allowed-hosts)."""
     if not API_KEY:
         logger.error("API_KEY is empty — the server will start but EVERY tool call will fail "
                      "upstream. Set API_KEY (or GRAND_ALARIC_API_KEY) as a platform secret.")
@@ -675,9 +622,8 @@ def _check_config(transport: str, host: str) -> None:
 
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
-    mcp.settings.host = os.getenv("HOST", "127.0.0.1")  # set 0.0.0.0 when hosting
-    mcp.settings.port = int(os.getenv("PORT", "8000"))  # host/port only used by sse/http transports
-    # note: endpoint unauthenticated; put a gateway/token in front if exposed beyond a trusted network.
+    mcp.settings.host = os.getenv("HOST", "127.0.0.1")
+    mcp.settings.port = int(os.getenv("PORT", "8000"))
     logger.info("Starting %s MCP — transport=%s host=%s port=%d", HOTEL_NAME, transport, mcp.settings.host, mcp.settings.port)
     _check_config(transport, mcp.settings.host)
     mcp.run(transport=transport)

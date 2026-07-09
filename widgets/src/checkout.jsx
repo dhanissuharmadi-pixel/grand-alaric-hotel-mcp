@@ -9,8 +9,7 @@ function App() {
   const url = out?.url;
   const b = out?.booking ?? {};
 
-  // The payment URL comes from structuredContent verbatim — the model never
-  // retypes it, so the link can't be corrupted. openExternal opens it for real.
+  // payment URL comes from structuredContent verbatim so the model can't corrupt it.
   const pay = () => {
     if (url) window.openai?.openExternal?.({ href: url });
   };

@@ -1,5 +1,3 @@
-// Shared inline-SVG icons used across the hotel widgets. Stroke icons share one
-// wrapper keyed by name; `star` is filled and special-cased. Unknown name → check.
 const ICONS = {
   pin: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
