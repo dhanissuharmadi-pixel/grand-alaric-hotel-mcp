@@ -60,3 +60,9 @@ export const idr = new Intl.NumberFormat("id-ID", {
   currency: "IDR",
   maximumFractionDigits: 0,
 });
+
+// ISO yyyy-mm-dd → dd-mm-yyyy for display (dates stay ISO in state and API calls).
+export function fmtDate(iso) {
+  const [y, m, d] = String(iso ?? "").split("-");
+  return y && m && d ? `${d}-${m}-${y}` : (iso ?? "");
+}

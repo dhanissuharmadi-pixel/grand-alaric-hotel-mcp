@@ -219,7 +219,9 @@ mcp = FastMCP(
         "ALWAYS render hotels and rooms by calling a tool — never describe hotels, rooms, "
         "rates, or availability as text or a markdown list. The widget is the source of truth. "
         f"For a general or location search (e.g. 'hotels in {HOTEL_LOCATION}'), use search_hotels "
-        "— it renders a carousel of hotel cards. For a specific named hotel's full "
+        "— it renders a carousel of hotel cards. If the request already includes stay dates, "
+        "pass them to search_hotels (check_in_date/check_out_date, plus guests) so the widget "
+        "can skip its date picker. For a specific named hotel's full "
         "details, use get_hotel_details. To jump straight to rooms when the user already "
         "names a hotel and dates (e.g. 'rooms at Grand Alaric for Jul 8-9'), call "
         "check_availability directly. Every one of these widgets drives the COMPLETE "
@@ -291,7 +293,8 @@ async def _list_widget_templates() -> list[_types.ResourceTemplate]:
     annotations={"readOnlyHint": True},
     structured_output=True,
 )
-async def search_hotels(location: str) -> dict[str, Any]:
+async def search_hotels(location: str, check_in_date: str = "", check_out_date: str = "",
+                        guests: int = 2) -> dict[str, Any]:
     """
     Find properties matching a location and show them as a card carousel.
 
@@ -301,8 +304,12 @@ async def search_hotels(location: str) -> dict[str, Any]:
 
     Args:
         location: City, area, or keyword (e.g. 'Bandung', 'Jakarta').
+        check_in_date: Optional YYYY-MM-DD. Pass it when the user's request already
+            includes stay dates — the widget then skips its date picker.
+        check_out_date: Optional YYYY-MM-DD, with check_in_date.
+        guests: Number of guests when the user states it.
     """
-    logger.info("search_hotels location=%r", location)
+    logger.info("search_hotels location=%r dates=%s→%s", location, check_in_date, check_out_date)
     raw = await _api("GET", "/hotels")
     try:
         data = json.loads(raw)
@@ -310,12 +317,24 @@ async def search_hotels(location: str) -> dict[str, Any]:
         return {"error": raw}
     if isinstance(data, dict) and data.get("error"):
         return {"error": data["error"], "hotels": [], "query": {"location": location}}
-    needle = location.lower()
+    # Token match, city/province FIRST: a hotel can be named "... Bandung" while its
+    # city is Jakarta, so name matches only count when no city matches the query.
+    # Zero matches anywhere → show all rather than nothing.
+    tokens = [t for t in re.split(r"[^a-z0-9]+", location.lower()) if len(t) >= 3 and t != "hotel"]
     hotels = data.get("hotels", []) if isinstance(data, dict) else []
-    matches = [h for h in hotels
-               if any(needle in (h.get(k) or "").lower()
-                      for k in ("hotel_name", "hotel_id", "city_name", "province_name"))] or hotels
-    return {"hotels": [_list_item(h) for h in matches], "query": {"location": location}}
+    def _hit(h, keys):
+        hay = " ".join((h.get(k) or "").lower() for k in keys)
+        return any(t in hay for t in tokens)
+    matches = ([h for h in hotels if _hit(h, ("city_name", "province_name"))]
+               or [h for h in hotels if _hit(h, ("hotel_name", "hotel_id"))]
+               or hotels)
+    query: dict[str, Any] = {"location": location}
+    try:
+        ci, co = _stay_dates(check_in_date, check_out_date)
+        query.update(check_in=ci.isoformat(), check_out=co.isoformat(), guests=guests)
+    except ValueError:
+        pass  # no/invalid dates → widget shows its date picker as usual
+    return {"hotels": [_list_item(h) for h in matches], "query": query}
 
 
 @mcp.tool(

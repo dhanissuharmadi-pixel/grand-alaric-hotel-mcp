@@ -72,7 +72,7 @@ export function GuestForm({ hotelName, query, selections, extras, nationalities 
   const [nation, setNation] = useState("");
   const [touched, setTouched] = useState(false);
 
-  const natOptions = nationalities.map((n) => ({ value: natCode(n), label: natName(n), hint: natPhone(n) }));
+  const natOptions = nationalities.map((n) => ({ value: natCode(n), label: natName(n) }));
   const phoneOptions = (nationalities.length ? nationalities : [{ phone_code: "+62", name: "Indonesia" }])
     .filter((n) => natPhone(n))
     .map((n) => ({ value: natPhone(n), label: natName(n), hint: natPhone(n) }));

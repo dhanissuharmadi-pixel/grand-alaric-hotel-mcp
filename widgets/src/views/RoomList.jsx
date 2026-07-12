@@ -32,13 +32,13 @@ function Rate({ rate, qty, onInc, onDec, canInc }) {
             {meal && <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{meal}</div>}
           </div>
           <div className="shrink-0 text-right">
-            <div className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(rate.price)}</div>
             {off > 0 && (
-              <div className="mt-0.5 flex items-center justify-end gap-1.5">
+              <div className="mb-0.5 flex items-center justify-end gap-1.5">
                 <span className="rounded px-1.5 py-px text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10">-{off}%</span>
                 <span className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500 line-through">{idr.format(rate.original_price)}</span>
               </div>
             )}
+            <div className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(rate.price)}</div>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between gap-2.5">
@@ -93,14 +93,14 @@ function RoomCard({ room, qty, setQty, onDetails }) {
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{room.name}</h3>
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{room.name}</h3>
             {room.meta && <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
           </div>
           {Number.isFinite(available) && available <= 5 && (
             <span className="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Only {available} left</span>
           )}
         </div>
-        <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+        <div className={`mt-3 space-y-2 pr-1 ${room.rates.length >= 3 ? "max-h-56 overflow-y-auto [scrollbar-width:thin]" : ""}`}>
           {room.rates.map((rate) => (
             <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} canInc={canInc} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
           ))}
@@ -134,6 +134,7 @@ function RoomDetail({ room, qty, setQty, onClose }) {
             <span className="absolute inset-0 flex items-center justify-center text-neutral-300 dark:text-neutral-600"><Icon name="grid" className="h-6 w-6" /></span>
             {room.image && <img src={room.image} alt={room.name} onError={(e) => { e.currentTarget.style.display = "none"; }} className="relative h-full w-full object-cover" />}
           </div>
+          {room.meta && <div className="mt-2 text-[13px] text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
           {facilities.length > 0 && (
             <div className="mt-4">
               <div className="mb-2 text-sm font-semibold">Room facilities</div>
@@ -146,8 +147,7 @@ function RoomDetail({ room, qty, setQty, onClose }) {
           )}
         </div>
         <div>
-          {room.meta && <div className="text-[13px] text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
-          {room.description && <p className="mt-2 text-[13px] leading-relaxed text-neutral-600 dark:text-neutral-300">{room.description}</p>}
+          {room.description && <p className="text-[13px] leading-relaxed text-neutral-600 dark:text-neutral-300">{room.description}</p>}
           <div className="mt-4 flex flex-col gap-2.5">
             {room.rates.map((rate) => (
               <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} canInc={canInc} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
@@ -276,7 +276,16 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
               <div className="text-lg font-semibold tabular-nums">{idr.format(total)}</div>
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400">Includes taxes &amp; fees</div>
             </div>
-            <button type="button" disabled={roomCount === 0} onClick={() => onContinue(selections, total)} className="h-11 shrink-0 rounded-xl bg-neutral-900 px-6 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
+            <button
+              type="button"
+              disabled={roomCount === 0}
+              onClick={() => onContinue(selections, total)}
+              className={`h-11 shrink-0 rounded-xl px-6 text-sm font-medium transition-all duration-150 active:scale-[0.99] ${
+                roomCount === 0
+                  ? "cursor-not-allowed bg-neutral-300 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
+                  : "bg-neutral-900 text-white hover:opacity-90 dark:bg-white dark:text-neutral-900"
+              }`}
+            >
               Continue
             </button>
           </div>

@@ -1,4 +1,4 @@
-import { idr } from "./icons.jsx";
+import { idr, fmtDate } from "./icons.jsx";
 
 export function selectionsTotal(selections, extras = []) {
   const rooms = selections.reduce((s, r) => s + r.price * r.qty, 0);
@@ -17,7 +17,7 @@ export function OrderSummary({ hotelName, query, selections, extras = [], onRemo
       <div className="text-[15px] font-semibold">{hotelName}</div>
       {query?.check_in && query?.check_out && (
         <div className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
-          {query.check_in} → {query.check_out}
+          {fmtDate(query.check_in)} → {fmtDate(query.check_out)}
           {nights ? ` · ${nights} night${nights > 1 ? "s" : ""}` : ""}
         </div>
       )}
@@ -47,7 +47,7 @@ export function OrderSummary({ hotelName, query, selections, extras = [], onRemo
           <div className="flex flex-col gap-2">
             {extras.map((e) => (
               <div key={e.id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate">{e.name}</span>
+                <span className="min-w-0 truncate">{e.name}{(e.qty || 1) > 1 ? <span className="text-neutral-400"> × {e.qty}</span> : null}</span>
                 <span className="shrink-0 tabular-nums">{idr.format(e.price * (e.qty || 1))}</span>
               </div>
             ))}

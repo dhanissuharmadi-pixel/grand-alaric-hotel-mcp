@@ -9,6 +9,7 @@ import { RoomList } from "./views/RoomList.jsx";
 import { EnhanceStay } from "./views/EnhanceStay.jsx";
 import { GuestForm } from "./views/GuestForm.jsx";
 import { Calendar } from "./views/Calendar.jsx";
+import { fmtDate } from "./views/icons.jsx";
 import "./index.css";
 
 // Booking flow controller. Infers the entry screen from tool output shape
@@ -31,7 +32,7 @@ function Spinner() {
 }
 
 function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack, loading, error }) {
-  const hint = !checkin ? "Select a check-in date" : !checkout ? "Now select a check-out date" : `${checkin} → ${checkout}`;
+  const hint = !checkin ? "Select a check-in date" : !checkout ? "Now select a check-out date" : `${fmtDate(checkin)} → ${fmtDate(checkout)}`;
   return (
     <div className="mx-auto w-full max-w-[640px] text-neutral-900 dark:text-neutral-100">
       <div className="mb-4 flex items-center gap-2">
@@ -60,7 +61,7 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
 
       {error && <div className="mt-3 text-[13px] text-red-600 dark:text-red-400">{error}</div>}
       <button type="button" onClick={onSubmit} disabled={loading || !checkin || !checkout} className="mt-4 h-11 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
-        {loading ? "Checking…" : "See rooms"}
+        {loading ? "Checking…" : "Check availability"}
       </button>
     </div>
   );
@@ -180,9 +181,10 @@ export function BookingApp() {
   const [paying, setPaying] = useState(false);
   const [payUrl, setPayUrl] = useState(null);
   const [trackingId, setTrackingId] = useState(null);
-  const [checkin, setCheckin] = useState("");
-  const [checkout, setCheckout] = useState("");
+  const [checkin, setCheckin] = useState(out?.query?.check_in ?? "");
+  const [checkout, setCheckout] = useState(out?.query?.check_out ?? "");
   const [guests, setGuests] = useState(out?.query?.guests ?? 2);
+  const dirtyRef = useRef(false); // user has navigated — never overwrite live state with a snapshot
 
   const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
 
@@ -200,6 +202,11 @@ export function BookingApp() {
       setDetail(out.hotel);
       setView("details");
     }
+    if (out?.query?.check_in && !checkin && !dirtyRef.current) {
+      setCheckin(out.query.check_in);
+      setCheckout(out.query.check_out ?? "");
+      if (out.query.guests) setGuests(out.query.guests);
+    }
   }, [out, saved]);
 
   // remount recovery: resume the payment screen so polling continues.
@@ -212,7 +219,46 @@ export function BookingApp() {
     }
   }, [saved]);
 
+  // remount recovery for mid-flow states (the "reset back to the search screen" bug):
+  // restore the snapshot, then refetch what wasn't persisted (rooms list, nationalities).
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || dirtyRef.current) return;
+    if (!saved?.view || saved.view === "done" || saved.view === "list") return;
+    restoredRef.current = true;
+    if (saved.hotel) setHotel((h) => h ?? saved.hotel);
+    if (saved.checkin) setCheckin((c) => c || saved.checkin);
+    if (saved.checkout) setCheckout((c) => c || saved.checkout);
+    if (saved.guests) setGuests(saved.guests);
+    if (saved.roomQuery) setRoomQuery((q) => q ?? saved.roomQuery);
+    if (saved.selections?.length) setSelections((s) => (s.length ? s : saved.selections));
+    if (saved.extras?.length) setExtras((e) => (e.length ? e : saved.extras));
+    setView(saved.view);
+    if (["rooms", "enhance", "guest"].includes(saved.view) && saved.roomQuery && !(roomsEntry && out?.rooms)) {
+      callTool("check_availability", {
+        hotel_id: saved.roomQuery.hotel_id, check_in_date: saved.roomQuery.check_in,
+        check_out_date: saved.roomQuery.check_out, guests: saved.roomQuery.guests ?? 2,
+      }).then((d) => {
+        if (d?.rooms) { setRooms(d.rooms); setAvailableExtras(d.extras ?? []); }
+      });
+    }
+    if (["enhance", "guest"].includes(saved.view)) {
+      callTool("list_nationalities", {}).then((d) => setNationalities(normNationalities(d?.nationalities ?? d)));
+    }
+  }, [saved]);
+
+  // persist a light snapshot so a rebuilt iframe resumes instead of resetting to the list.
+  useEffect(() => {
+    if (view === "list" || view === "done") return;
+    window.openai?.setWidgetState?.({
+      view,
+      hotel: hotel ? { hotel_id: hotel.hotel_id, hotel_name: hotel.hotel_name } : null,
+      roomQuery, selections, extras, checkin, checkout, guests,
+    });
+  }, [view, selections, extras, checkin, checkout]);
+
   const openDetails = async (h) => {
+    dirtyRef.current = true;
     setHotel(h);
     setDetail(null);
     setError(null);
@@ -223,26 +269,38 @@ export function BookingApp() {
     setLoading(false);
   };
 
-  const openDates = (h) => {
-    setHotel(h);
-    setError(null);
-    setView("dates");
-  };
-
-  const loadRooms = async () => {
-    if (!checkin || !checkout) return setError("Pick check-in and check-out dates.");
+  const loadRooms = async (h = hotel, ci = checkin, co = checkout) => {
+    if (!ci || !co) return setError("Pick check-in and check-out dates.");
     setError(null);
     setLoading(true);
-    const data = await callTool("check_availability", { hotel_id: hotel.hotel_id, check_in_date: checkin, check_out_date: checkout, guests: Number(guests) });
+    const data = await callTool("check_availability", { hotel_id: h.hotel_id, check_in_date: ci, check_out_date: co, guests: Number(guests) });
     setLoading(false);
-    if (!data || data.error) return setError(data?.error || "Couldn't load rooms. Please try again.");
+    if (!data || data.error) {
+      setView("dates"); // land on the picker so the dates can be adjusted
+      return setError(data?.error || "Couldn't load rooms. Please try again.");
+    }
     setRooms(data.rooms ?? []);
     setRoomQuery(data.query ?? null);
     setAvailableExtras(data.extras ?? data.services ?? []);
     setView("rooms");
   };
 
+  const openDates = (h) => {
+    dirtyRef.current = true;
+    setHotel(h);
+    setError(null);
+    if (checkin && checkout) {
+      // dates already known from the search query — skip the picker
+      setRooms(null);
+      setView("rooms"); // rooms==null renders the spinner while we fetch
+      loadRooms(h);
+    } else {
+      setView("dates");
+    }
+  };
+
   const continueToEnhance = async (sel) => {
+    dirtyRef.current = true;
     setSelections(sel);
     setView(availableExtras.length ? "enhance" : "guest");
     if (!nationalities.length) {
@@ -251,8 +309,11 @@ export function BookingApp() {
     }
   };
 
-  const toggleExtra = (extra) =>
-    setExtras((cur) => (cur.some((e) => e.id === extra.id) ? cur.filter((e) => e.id !== extra.id) : [...cur, extra]));
+  const setExtraQty = (extra, q) =>
+    setExtras((cur) => {
+      const rest = cur.filter((e) => e.id !== extra.id);
+      return q > 0 ? [...rest, { ...extra, qty: q }] : rest;
+    });
   const removeRoom = (roomId) => setSelections((cur) => cur.filter((r) => r.room_id !== roomId));
 
   const pay = async (guest) => {
@@ -286,18 +347,18 @@ export function BookingApp() {
   } else if (view === "dates") {
     body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={loadRooms} onBack={() => setView(detail ? "details" : rooms ? "rooms" : "list")} loading={loading} error={error} />;
   } else if (view === "rooms") {
-    body = (
+    body = rooms == null ? <Spinner /> : (
       <RoomList
         rooms={rooms}
         title={hotelName ?? "Available rooms"}
-        subtitle={roomQuery?.check_in ? `${roomQuery.check_in} → ${roomQuery.check_out}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
+        subtitle={roomQuery?.check_in ? `${fmtDate(roomQuery.check_in)} → ${fmtDate(roomQuery.check_out)}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
         onContinue={continueToEnhance}
         onBack={roomsEntry ? undefined : () => setView("dates")}
         onChangeDates={() => setView("dates")}
       />
     );
   } else if (view === "enhance") {
-    body = <EnhanceStay hotelName={hotelName} query={roomQuery} selections={selections} available={availableExtras} chosen={extras} onToggleExtra={toggleExtra} onRemoveRoom={removeRoom} onContinue={() => setView("guest")} onBack={() => setView("rooms")} />;
+    body = <EnhanceStay hotelName={hotelName} query={roomQuery} selections={selections} available={availableExtras} chosen={extras} onSetExtraQty={setExtraQty} onRemoveRoom={removeRoom} onContinue={() => setView("guest")} onBack={() => setView("rooms")} />;
   } else if (view === "guest") {
     body = paying ? (
       <div className="mx-auto w-full max-w-[420px] rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900 p-8 text-neutral-900 dark:text-neutral-100">
@@ -316,6 +377,8 @@ export function BookingApp() {
         {String(out.error)}
       </div>
     );
+  } else if (out == null) {
+    body = <Spinner />; // search tool still running — output not delivered yet
   } else {
     body = <HotelCards hotels={hotels} location={location} onDetails={openDetails} onViewRooms={openDates} />;
   }

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Check } from "@openai/apps-sdk-ui/components/Icon";
 import { useOpenAiGlobal } from "./openai.js";
+import { fmtDate } from "./views/icons.jsx";
 import "./index.css";
 
 function App() {
@@ -17,7 +18,7 @@ function App() {
   const summary = [
     b.guest_name,
     b.hotel_id,
-    b.check_in && b.check_out ? `${b.check_in} → ${b.check_out}` : null,
+    b.check_in && b.check_out ? `${fmtDate(b.check_in)} → ${fmtDate(b.check_out)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");

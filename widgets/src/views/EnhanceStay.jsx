@@ -1,7 +1,7 @@
 import { OrderSummary } from "./OrderSummary.jsx";
 import { idr } from "./icons.jsx";
 
-function ExtraCard({ extra, chosen, onToggle }) {
+function ExtraCard({ extra, qty, onSetQty }) {
   const off = extra.original_price && extra.original_price > extra.price ? Math.round((1 - extra.price / extra.original_price) * 100) : 0;
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
@@ -14,37 +14,36 @@ function ExtraCard({ extra, chosen, onToggle }) {
       <div className="flex flex-auto flex-col p-3.5">
         <div className="text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-100">{extra.name}</div>
         <div className="mt-auto pt-3">
-          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-            <span className="text-base font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(extra.price)}</span>
-            {off > 0 && (
-              <>
-                <span className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500 line-through">{idr.format(extra.original_price)}</span>
-                <span className="rounded px-1.5 py-px text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10">-{off}%</span>
-              </>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => onToggle(extra)}
-            className={`mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-transform duration-150 hover:opacity-90 active:scale-[0.99] ${chosen ? "border border-neutral-900 dark:border-white text-neutral-900 dark:text-neutral-100" : "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"}`}
-          >
-            {chosen ? (
-              <>
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                Added
-              </>
-            ) : (
-              "Select"
-            )}
-          </button>
+          {off > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500 line-through">{idr.format(extra.original_price)}</span>
+              <span className="rounded px-1.5 py-px text-[11px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10">-{off}%</span>
+            </div>
+          )}
+          <div className="text-base font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{idr.format(extra.price)}</div>
+          {qty === 0 ? (
+            <button
+              type="button"
+              onClick={() => onSetQty(extra, 1)}
+              className="mt-3 flex h-9 w-full items-center justify-center rounded-lg bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]"
+            >
+              Select
+            </button>
+          ) : (
+            <div className="mt-3 flex h-9 w-full items-center justify-between overflow-hidden rounded-lg border border-neutral-900 dark:border-white">
+              <button type="button" aria-label="Decrease" onClick={() => onSetQty(extra, qty - 1)} className="h-full w-10 text-lg text-neutral-900 dark:text-neutral-100">−</button>
+              <span className="text-sm font-semibold tabular-nums">{qty}</span>
+              <button type="button" aria-label="Increase" onClick={() => onSetQty(extra, qty + 1)} className="h-full w-10 text-lg text-neutral-900 dark:text-neutral-100">+</button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-export function EnhanceStay({ hotelName, query, selections, available = [], chosen = [], onToggleExtra, onRemoveRoom, onContinue, onBack }) {
-  const chosenIds = new Set(chosen.map((e) => e.id));
+export function EnhanceStay({ hotelName, query, selections, available = [], chosen = [], onSetExtraQty, onRemoveRoom, onContinue, onBack }) {
+  const qtyOf = (id) => chosen.find((e) => e.id === id)?.qty ?? 0;
   return (
     <div className="w-full text-neutral-900 dark:text-neutral-100">
       <div className="mb-4 flex items-center gap-2">
@@ -62,7 +61,7 @@ export function EnhanceStay({ hotelName, query, selections, available = [], chos
           {available.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {available.map((e) => (
-                <ExtraCard key={e.id} extra={e} chosen={chosenIds.has(e.id)} onToggle={onToggleExtra} />
+                <ExtraCard key={e.id} extra={e} qty={qtyOf(e.id)} onSetQty={onSetExtraQty} />
               ))}
             </div>
           ) : (
