@@ -101,7 +101,7 @@ export function GuestForm({ hotelName, query, selections, extras, nationalities 
   const show = (k) => touched && errs[k];
 
   return (
-    <div className="mx-auto w-full max-w-[560px] text-neutral-900 dark:text-neutral-100">
+    <div className="mx-auto w-full max-w-[640px] text-neutral-900 dark:text-neutral-100">
       <div className="mb-4 flex items-center gap-2">
         <button type="button" onClick={onBack} aria-label="Back" className="-ml-1 flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10">
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>

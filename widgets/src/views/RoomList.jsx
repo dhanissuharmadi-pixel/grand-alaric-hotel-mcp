@@ -82,7 +82,7 @@ function RoomCard({ room, qty, setQty, onDetails }) {
   const available = room.available == null ? Infinity : Number(room.available);
   const canInc = used < available;
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
       <button type="button" onClick={() => onDetails(room)} aria-label="View room details" className="relative block w-full">
         <div className="relative aspect-[16/9] bg-black/5 dark:bg-white/10">
           <span className="absolute inset-0 flex items-center justify-center text-neutral-300 dark:text-neutral-600"><Icon name="grid" className="h-6 w-6" /></span>
@@ -100,7 +100,8 @@ function RoomCard({ room, qty, setQty, onDetails }) {
             <span className="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Only {available} left</span>
           )}
         </div>
-        <div className={`mt-3 space-y-2 pr-1 ${room.rates.length >= 3 ? "max-h-56 overflow-y-auto [scrollbar-width:thin]" : ""}`}>
+        {/* fixed height so side-by-side cards match: 2 rates fit, 3+ scroll */}
+        <div className="mt-3 h-72 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
           {room.rates.map((rate) => (
             <Rate key={rate.room_id} rate={rate} qty={qty[rate.room_id] || 0} canInc={canInc} onInc={() => setQty(rate.room_id, (qty[rate.room_id] || 0) + 1)} onDec={() => setQty(rate.room_id, Math.max(0, (qty[rate.room_id] || 0) - 1))} />
           ))}
@@ -116,10 +117,6 @@ function RoomDetail({ room, qty, setQty, onClose }) {
   const available = room.available == null ? Infinity : Number(room.available);
   const canInc = used < available;
   const facilities = room.facilities ?? [];
-  const addToBooking = () => {
-    if (subtotal === 0 && room.rates[0]) setQty(room.rates[0].room_id, 1);
-    onClose();
-  };
   return (
     <div className="w-full text-neutral-900 dark:text-neutral-100">
       <div className="mb-3 flex items-center gap-2">
@@ -155,7 +152,16 @@ function RoomDetail({ room, qty, setQty, onClose }) {
           </div>
         </div>
       </div>
-      <button type="button" onClick={addToBooking} className="mt-5 h-12 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white dark:bg-white dark:text-neutral-900 transition-transform duration-150 hover:opacity-90 active:scale-[0.99]">
+      <button
+        type="button"
+        disabled={subtotal === 0}
+        onClick={onClose}
+        className={`mt-5 h-12 w-full rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.99] ${
+          subtotal === 0
+            ? "cursor-not-allowed bg-neutral-300 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
+            : "bg-neutral-900 text-white hover:opacity-90 dark:bg-white dark:text-neutral-900"
+        }`}
+      >
         {subtotal > 0 ? `Add to booking · ${idr.format(subtotal)}` : "Add to booking"}
       </button>
     </div>
@@ -255,7 +261,7 @@ export function RoomList({ rooms, title = "Available rooms", subtitle, onContinu
         <>
           <div ref={scroller} onScroll={onScroll} className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {pages.map((pg, i) => (
-              <div key={i} className="grid w-full flex-none snap-start grid-cols-1 items-start gap-3 px-1 pb-1 sm:grid-cols-2">
+              <div key={i} className="grid w-full flex-none snap-start grid-cols-1 items-stretch gap-3 px-1 pb-1 sm:grid-cols-2">
                 {pg.map((room) => (
                   // room names can repeat; first rate id is unique per room type
                   <RoomCard key={room.rates?.[0]?.room_id ?? room.name} room={room} qty={qty} setQty={setQty} onDetails={setDetail} />

@@ -388,7 +388,9 @@ export function BookingApp() {
       className={`${theme === "dark" ? "dark " : ""}bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100`}
       style={{ colorScheme: theme === "dark" ? "dark" : "light" }}
     >
-      <div className="antialiased w-full">{body}</div>
+      {/* one stable footprint across views: short screens (spinner, payment card)
+          center inside the same min-height instead of collapsing the widget */}
+      <div className="antialiased flex min-h-[420px] w-full flex-col justify-center">{body}</div>
     </div>
   );
 }
