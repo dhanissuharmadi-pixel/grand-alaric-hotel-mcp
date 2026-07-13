@@ -2,7 +2,50 @@
 
 > Context dump for the next Claude session (or human). Read this first, then `server.py`
 > and `widgets/src/BookingApp.jsx`.
-> Last updated: 2026-07-06.
+> Last updated: 2026-07-13.
+
+## ACTIVE WORK — pick up here (2026-07-13)
+
+Shipped state: `main` @ `5e28122` (equal room cards, CTA desaturation, stable footprint)
+plus the big revision batch (`5f4b13e`: search separation, date-skip, flow restore, price
+stacking, dd-mm-yyyy, extras qty steppers, etc.). `dev` == `main` content as of last ship.
+
+### BUG 1 — manual date pick is broken (regression, ROOT-CAUSED, fix is one line)
+Repro (verified live in preview): search WITHOUT dates in the prompt → "View rooms" →
+date picker → pick a check-in + check-out (the dd-mm range shows correctly) → click
+"Check availability" → **stays on the picker, no rooms load, no spinner.**
+
+Cause: the date-skip refactor changed `loadRooms` in `widgets/src/BookingApp.jsx` to take
+params `async (h = hotel, ci = checkin, co = checkout)`. But `DateForm`'s submit button is
+`onClick={onSubmit}` and BookingApp passes `onSubmit={loadRooms}`, so the **click Event is
+passed as `h`** → `h.hotel_id` is `undefined` → `check_availability` fails → the error
+branch does `setView("dates")`, dumping the user back on the picker. (The date-SKIP path
+works because it calls `loadRooms(h)` with the real hotel; only the manual DateForm submit
+is broken.)
+
+Fix: make the DateForm submit pass no args. In BookingApp's `view === "dates"` render,
+change `onSubmit={loadRooms}` → `onSubmit={() => loadRooms()}` (all defaults apply → h=hotel).
+Then rebuild, verify the manual path loads rooms, ship dev→main.
+
+### TODO 2 — "make the UI consistent across all parts" (clarified by user)
+Meaning: the **main hotel-selection page (`HotelCards`) should match the rest of the flow** —
+same page width, spacing, card style, and header pattern as rooms/enhance/guest, so moving
+step-to-step feels like one continuous page. Not started. `HotelCards.jsx` is the file.
+
+### Not ours (backend) — payment "Failed" never updates the widget
+`/tracking-id` only returns Waiting / Confirm / Expired — never "Failed". A failed QRIS
+attempt stays "Waiting" (retryable) until the QR expires, then flips to "Expired" (widget
+then shows "Payment expired"). The invoice page shows "Failed" from a different record the
+widget can't poll. Backend fix: surface a terminal failed/cancelled status on `/tracking-id`.
+See "Known backend/config issues" below. Re-confirmed 2026-07-12 (51 polls, all "Waiting").
+
+### Local test server (dies with the session — restart in the new chat)
+```bash
+MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 uv run server.py &   # then:
+cloudflared tunnel --url http://localhost:8000 --no-autoupdate           # fresh URL each time
+```
+Point the ChatGPT connector at `<tunnel>/mcp`; start a NEW ChatGPT conversation so it loads
+the current widget build. Production `mcp.grandalaric.com` is live and current (senior redeploys).
 
 ## Branch layout — develop HERE, deploy from main
 
