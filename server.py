@@ -32,10 +32,16 @@ _resource_domains_env = os.getenv("RESOURCE_DOMAINS", "")
 RESOURCE_DOMAINS = (
     [d.strip() for d in _resource_domains_env.split(",") if d.strip()]
     if _resource_domains_env
-    else [f"https://*.{HOTEL_DOMAIN}"]
+    # *.alarichotels.com is the platform image CDN (covers every tenant's covers/gallery)
+    else [f"https://*.{HOTEL_DOMAIN}", "https://*.alarichotels.com"]
 )
 PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "https://m.grandalaric.com")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+# money formatting is done in the widget; server just ships the tenant's currency/locale.
+CURRENCY = os.getenv("CURRENCY", "IDR")
+LOCALE = os.getenv("LOCALE", "id-ID")
+_MONEY = {"currency": CURRENCY, "locale": LOCALE}
 
 # false hides add-ons if the backend stops booking them (see .env.example).
 EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
@@ -128,9 +134,13 @@ def _list_item(h: dict) -> dict:
     """Map a /hotels item to the hotel-list card shape (the API now ships cover, rating,
     city/province and starting_price directly — no per-hotel enrichment needed)."""
     area = ", ".join(p for p in (h.get("city_name"), h.get("province_name")) if p)
+    # starting_price is a number when the hotel has a bookable rate, but some tenants
+    # return an object (availability payload) when it doesn't — only show a real price.
+    sp = h.get("starting_price")
     return {"hotel_id": h.get("hotel_id"), "hotel_name": h.get("hotel_name"),
             "star_rating": h.get("rating"), "area": area or None,
-            "image": h.get("hotel_cover"), "price_from": h.get("starting_price")}
+            "image": h.get("hotel_cover"),
+            "price_from": sp if isinstance(sp, (int, float)) else None}
 
 
 def _normalize_hotel(base: dict, info: dict) -> dict:
@@ -156,7 +166,7 @@ def _normalize_hotel(base: dict, info: dict) -> dict:
     if info.get("attraction"):
         h["nearby"] = [{"label": a["name"], "distance": a.get("distance")}
                        for a in info["attraction"] if a.get("name")]
-    if info.get("starting_price") is not None:
+    if isinstance(info.get("starting_price"), (int, float)):
         h["price_from"] = info["starting_price"]
     lat, lng = info.get("hotel_loc_lat"), info.get("hotel_loc_long")
     if lat and lng and GOOGLE_MAPS_API_KEY:
@@ -334,7 +344,7 @@ async def search_hotels(location: str, check_in_date: str = "", check_out_date: 
         query.update(check_in=ci.isoformat(), check_out=co.isoformat(), guests=guests)
     except ValueError:
         pass  # no/invalid dates → widget shows its date picker as usual
-    return {"hotels": [_list_item(h) for h in matches], "query": query}
+    return {"hotels": [_list_item(h) for h in matches], "query": query, **_MONEY}
 
 
 @mcp.tool(
@@ -365,7 +375,7 @@ async def get_hotel_details(hotel_id: str) -> dict[str, Any]:
     detail = info.get("hotel") if isinstance(info, dict) else None
     if not isinstance(detail, dict):
         return {"error": "Hotel not found."}
-    return {"hotel": _normalize_hotel({"hotel_id": hotel_id.upper()}, detail)}
+    return {"hotel": _normalize_hotel({"hotel_id": hotel_id.upper()}, detail), **_MONEY}
 
 
 @mcp.tool(
@@ -427,6 +437,7 @@ async def check_availability(
     result["extras"] = (await _enhancements(hotel_id, check_in, check_out, guests)) if EXTRAS_ENABLED else []
     result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                        "check_out": check_out.isoformat(), "guests": guests}
+    result.update(_MONEY)
     return result
 
 

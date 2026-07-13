@@ -9,7 +9,7 @@ import { RoomList } from "./views/RoomList.jsx";
 import { EnhanceStay } from "./views/EnhanceStay.jsx";
 import { GuestForm } from "./views/GuestForm.jsx";
 import { Calendar } from "./views/Calendar.jsx";
-import { fmtDate } from "./views/icons.jsx";
+import { fmtDate, setMoney } from "./views/icons.jsx";
 import "./index.css";
 
 // Booking flow controller. Infers the entry screen from tool output shape
@@ -31,7 +31,7 @@ function Spinner() {
   );
 }
 
-function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack, loading, error }) {
+function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack, onChangeHotel, loading, error }) {
   const hint = !checkin ? "Select a check-in date" : !checkout ? "Now select a check-out date" : `${fmtDate(checkin)} → ${fmtDate(checkout)}`;
   return (
     <div className="mx-auto w-full max-w-[640px] text-neutral-900 dark:text-neutral-100">
@@ -41,7 +41,18 @@ function DateForm({ hotelName, checkin, checkout, guests, set, onSubmit, onBack,
         </button>
         <div className="min-w-0">
           <div className="text-base font-semibold">When are you staying?</div>
-          {hotelName && <div className="truncate text-[13px] text-neutral-500 dark:text-neutral-400">{hotelName}</div>}
+          {hotelName &&
+            (onChangeHotel ? (
+              <button type="button" onClick={onChangeHotel} className="mt-0.5 flex max-w-full items-center gap-1.5 text-[13px] font-medium text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100">
+                <span className="truncate">{hotelName}</span>
+                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-black/10 px-2 py-0.5 text-[11px] dark:border-white/15">
+                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  Change
+                </span>
+              </button>
+            ) : (
+              <div className="truncate text-[13px] text-neutral-500 dark:text-neutral-400">{hotelName}</div>
+            ))}
         </div>
       </div>
 
@@ -163,6 +174,7 @@ export function BookingApp() {
   const saved = useOpenAiGlobal("widgetState"); // survives ChatGPT rebuilding the iframe
   const hotels = out?.hotels ?? [];
   const location = out?.query?.location;
+  setMoney(out?.currency, out?.locale); // tenant currency from tool output; defaults IDR
 
   const roomsEntry = Array.isArray(out?.rooms) && !out?.hotels;       // check_availability
   const detailsEntry = !!out?.hotel && !out?.hotels && !roomsEntry;   // get_hotel_details
@@ -184,6 +196,10 @@ export function BookingApp() {
   const [checkin, setCheckin] = useState(out?.query?.check_in ?? "");
   const [checkout, setCheckout] = useState(out?.query?.check_out ?? "");
   const [guests, setGuests] = useState(out?.query?.guests ?? 2);
+  // where "back" returns to from the date picker / room list — set at each entry so
+  // back reverses the actual path taken (list→dates→rooms), never traps in a loop.
+  const [datesBack, setDatesBack] = useState("list");
+  const [roomsBack, setRoomsBack] = useState("list");
   const dirtyRef = useRef(false); // user has navigated — never overwrite live state with a snapshot
 
   const hotelName = hotel?.hotel_name ?? detail?.hotel_name;
@@ -289,8 +305,10 @@ export function BookingApp() {
     dirtyRef.current = true;
     setHotel(h);
     setError(null);
+    setDatesBack(view); // back from the picker → wherever we came from (list or details)
     if (checkin && checkout) {
       // dates already known from the search query — skip the picker
+      setRoomsBack(view); // never saw the picker, so back from rooms skips it too
       setRooms(null);
       setView("rooms"); // rooms==null renders the spinner while we fetch
       loadRooms(h);
@@ -345,7 +363,7 @@ export function BookingApp() {
   if (view === "details") {
     body = loading && !detail ? <Spinner /> : <HotelDetail hotel={detail} onViewRooms={() => openDates(hotel)} onBack={hotels.length ? () => setView("list") : undefined} />;
   } else if (view === "dates") {
-    body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={() => loadRooms()} onBack={() => setView(detail ? "details" : rooms ? "rooms" : "list")} loading={loading} error={error} />;
+    body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={() => { setRoomsBack("dates"); loadRooms(); }} onBack={() => setView(datesBack)} onChangeHotel={hotels.length ? () => setView("list") : undefined} loading={loading} error={error} />;
   } else if (view === "rooms") {
     body = rooms == null ? <Spinner /> : (
       <RoomList
@@ -353,7 +371,7 @@ export function BookingApp() {
         title={hotelName ?? "Available rooms"}
         subtitle={roomQuery?.check_in ? `${fmtDate(roomQuery.check_in)} → ${fmtDate(roomQuery.check_out)}${roomQuery.guests ? ` · ${roomQuery.guests} guests` : ""}` : null}
         onContinue={continueToEnhance}
-        onBack={roomsEntry ? undefined : () => setView("dates")}
+        onBack={roomsEntry ? undefined : () => setView(roomsBack)}
         onChangeDates={() => setView("dates")}
       />
     );

@@ -55,14 +55,18 @@ export function Caret({ open }) {
   );
 }
 
-export const idr = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
+// currency/locale come from tool output (server env); default IDR. IDR has 0 minor
+// units so no maximumFractionDigits needed — other currencies pick their own.
+let _fmt = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" });
+export const idr = { format: (n) => _fmt.format(n) };
+export function setMoney(currency, locale) {
+  if (currency) _fmt = new Intl.NumberFormat(locale || "id-ID", { style: "currency", currency });
+}
 
-// ISO yyyy-mm-dd → dd-mm-yyyy for display (dates stay ISO in state and API calls).
+// ISO yyyy-mm-dd → "Thu, Aug 13, 2026" for display (dates stay ISO in state and API calls).
+// Built from local Y/M/D parts so the weekday never shifts across time zones.
 export function fmtDate(iso) {
-  const [y, m, d] = String(iso ?? "").split("-");
-  return y && m && d ? `${d}-${m}-${y}` : (iso ?? "");
+  const [y, m, d] = String(iso ?? "").split("-").map(Number);
+  if (!y || !m || !d) return iso ?? "";
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }

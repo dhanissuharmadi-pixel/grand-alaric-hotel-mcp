@@ -92,8 +92,10 @@ function RoomCard({ room, qty, setQty, onDetails }) {
       </button>
       <div className="p-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{room.name}</h3>
+          {/* fixed min-height + 2-line clamp so the rate boxes below start at the
+              same Y whether the title is one or two lines (side-by-side cards line up) */}
+          <div className="flex min-h-[3.75rem] min-w-0 flex-col">
+            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-neutral-900 dark:text-neutral-100">{room.name}</h3>
             {room.meta && <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{room.meta}</div>}
           </div>
           {Number.isFinite(available) && available <= 5 && (
