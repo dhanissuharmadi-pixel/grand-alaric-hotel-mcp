@@ -345,7 +345,7 @@ export function BookingApp() {
   if (view === "details") {
     body = loading && !detail ? <Spinner /> : <HotelDetail hotel={detail} onViewRooms={() => openDates(hotel)} onBack={hotels.length ? () => setView("list") : undefined} />;
   } else if (view === "dates") {
-    body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={loadRooms} onBack={() => setView(detail ? "details" : rooms ? "rooms" : "list")} loading={loading} error={error} />;
+    body = <DateForm hotelName={hotel?.hotel_name} checkin={checkin} checkout={checkout} guests={guests} set={{ checkin: setCheckin, checkout: setCheckout, guests: setGuests }} onSubmit={() => loadRooms()} onBack={() => setView(detail ? "details" : rooms ? "rooms" : "list")} loading={loading} error={error} />;
   } else if (view === "rooms") {
     body = rooms == null ? <Spinner /> : (
       <RoomList
