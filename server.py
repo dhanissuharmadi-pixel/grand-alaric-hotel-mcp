@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from contextvars import ContextVar
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -42,6 +43,13 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 CURRENCY = os.getenv("CURRENCY", "IDR")
 LOCALE = os.getenv("LOCALE", "id-ID")
 _MONEY = {"currency": CURRENCY, "locale": LOCALE}
+
+# Multi-tenant: serve several backends from one process, picked by URL path prefix
+# (e.g. /vie/mcp). TENANTS="vie=https://…/vie,ga=https://…/webapi/chatgpt". Empty = single
+# tenant (API_BASE_URL). _current_base is set per request by the tenant router below.
+TENANTS = {p.split("=", 1)[0].strip(): p.split("=", 1)[1].strip()
+           for p in os.getenv("TENANTS", "").split(",") if "=" in p}
+_current_base = ContextVar("api_base", default=API_BASE_URL)
 
 # false hides add-ons if the backend stops booking them (see .env.example).
 EXTRAS_ENABLED = os.getenv("EXTRAS_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
@@ -188,21 +196,23 @@ async def _enhancements(hotel_id: str, check_in: date, check_out: date, guests: 
         return []
     items = data if isinstance(data, list) else data.get("data") or data.get("enhancements") or []
     return [{"id": e.get("enhance_stay_id"), "name": e.get("title"), "image": e.get("image"),
-             "price": e.get("end_price"), "original_price": e.get("original_price")}
+             "price": e.get("end_price"), "original_price": e.get("original_price"),
+             "max_qty": e.get("max_qty")}
             for e in items if isinstance(e, dict) and e.get("title")]
 
 
-# Shared client → connection pooling under concurrent widget polling.
+# Shared client → connection pooling under concurrent widget polling. Base URL is per
+# request (multi-tenant), so we pass absolute URLs instead of setting client base_url.
 _http = httpx.AsyncClient(
-    base_url=API_BASE_URL,
     timeout=httpx.Timeout(20.0, connect=10.0),
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
 )
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
+    url = _current_base.get().rstrip("/") + path
     try:
-        r = await _http.request(method, path, json=json_body, headers={API_KEY_HEADER: API_KEY})
+        r = await _http.request(method, url, json=json_body, headers={API_KEY_HEADER: API_KEY})
         r.raise_for_status()
         return r.text
     except httpx.HTTPError as exc:
@@ -656,4 +666,26 @@ if __name__ == "__main__":
     mcp.settings.port = int(os.getenv("PORT", "8000"))
     logger.info("Starting %s MCP — transport=%s host=%s port=%d", HOTEL_NAME, transport, mcp.settings.host, mcp.settings.port)
     _check_config(transport, mcp.settings.host)
-    mcp.run(transport=transport)
+    if TENANTS and transport == "streamable-http":
+        import uvicorn
+        app = mcp.streamable_http_app()  # its lifespan runs the session manager
+
+        async def tenant_router(scope, receive, send):
+            # /<slug>/mcp → set that tenant's base URL and forward as /mcp.
+            if scope["type"] == "http":
+                seg = scope["path"].lstrip("/").split("/", 1)
+                if seg[0] in TENANTS:
+                    token = _current_base.set(TENANTS[seg[0]])
+                    rest = "/" + (seg[1] if len(seg) > 1 else "")
+                    scope = {**scope, "path": rest, "raw_path": rest.encode()}
+                    try:
+                        await app(scope, receive, send)
+                    finally:
+                        _current_base.reset(token)
+                    return
+            await app(scope, receive, send)  # lifespan/websocket/non-tenant paths
+
+        logger.info("Multi-tenant endpoints: %s", ", ".join(f"/{s}/mcp" for s in TENANTS))
+        uvicorn.run(tenant_router, host=mcp.settings.host, port=mcp.settings.port)
+    else:
+        mcp.run(transport=transport)

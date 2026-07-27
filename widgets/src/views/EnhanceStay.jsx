@@ -3,6 +3,7 @@ import { idr } from "./icons.jsx";
 
 function ExtraCard({ extra, qty, onSetQty }) {
   const off = extra.original_price && extra.original_price > extra.price ? Math.round((1 - extra.price / extra.original_price) * 100) : 0;
+  const max = extra.max_qty ?? Infinity; // backend caps per-extra quantity
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-neutral-900">
       <div className="relative aspect-[16/9] bg-black/5 dark:bg-white/10">
@@ -33,7 +34,7 @@ function ExtraCard({ extra, qty, onSetQty }) {
             <div className="mt-3 flex h-9 w-full items-center justify-between overflow-hidden rounded-lg border border-neutral-900 dark:border-white">
               <button type="button" aria-label="Decrease" onClick={() => onSetQty(extra, qty - 1)} className="h-full w-10 text-lg text-neutral-900 dark:text-neutral-100">−</button>
               <span className="text-sm font-semibold tabular-nums">{qty}</span>
-              <button type="button" aria-label="Increase" onClick={() => onSetQty(extra, qty + 1)} className="h-full w-10 text-lg text-neutral-900 dark:text-neutral-100">+</button>
+              <button type="button" aria-label="Increase" disabled={qty >= max} onClick={() => qty < max && onSetQty(extra, qty + 1)} className="h-full w-10 text-lg text-neutral-900 dark:text-neutral-100 disabled:opacity-40">+</button>
             </div>
           )}
         </div>
