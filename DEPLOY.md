@@ -15,19 +15,23 @@ deploy `main` as-is.
 ```bash
 uv sync
 MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
-# MCP endpoint: https://<your-domain>/mcp
+# MCP endpoint: https://<your-domain>/mcp   (or /<slug>/mcp per tenant if TENANTS is set)
 ```
 On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from env.
 
 ## Environment variables
 | Var | Required | Purpose |
 |---|---|---|
-| `GRAND_ALARIC_API_KEY` | **yes** | sent as `phm-chat-api-key` to the PHM backend. Set as a platform **secret**, not in `.env`. |
+| `API_KEY` | **yes** | sent as `phm-chat-api-key` to the PHM backend. Set as a platform **secret**, not in `.env`. (Legacy alias `GRAND_ALARIC_API_KEY` still works.) |
 | `MCP_TRANSPORT` | yes (hosted) | set to `streamable-http` |
 | `HOST` / `PORT` | yes (hosted) | `0.0.0.0` / platform port |
 | `MCP_ALLOWED_HOSTS` | **yes (public)** | the public host(s), e.g. `mcp.example.com`. The SDK blocks unknown `Host` headers (DNS-rebinding protection); set this to your domain, or `*` to disable the check behind a trusted proxy. |
-| `API_BASE_URL` | no | defaults to the live PHM endpoint; override only to point elsewhere. |
-| `EXTRAS_ENABLED` | no | default `true` — add-on extras ("enhance your stay") show and book end-to-end (backend fixed 2026-07-08). Set `false` to hide extras if the backend ever regresses. |
+| `API_BASE_URL` | no | defaults to the live PHM endpoint; override to point at one tenant. |
+| `TENANTS` | no | serve several backends from ONE process, picked by URL path prefix. `slug=base_url,slug=base_url` → endpoints `/<slug>/mcp`. Empty = single tenant (`API_BASE_URL`). |
+| `CURRENCY` / `LOCALE` | no | widget money formatting; default `IDR` / `id-ID`. |
+| `EXTRAS_ENABLED` | no | default `true` — add-on extras ("enhance your stay") show and book end-to-end. Set `false` to hide extras if the backend ever regresses. |
+
+White-label vars (`HOTEL_NAME`, `HOTEL_DOMAIN`, `RESOURCE_DOMAINS`, `PAYMENT_DOMAIN`, `GOOGLE_MAPS_API_KEY`) are in `.env.example`.
 
 ## Verify a deploy actually works (do this before connecting ChatGPT)
 The server logs a loud `ERROR` at startup for each of the config mistakes that cause a
