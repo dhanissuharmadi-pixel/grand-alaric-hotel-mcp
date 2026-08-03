@@ -138,6 +138,16 @@ def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
 
 
+def _common_area(hotels: list[dict]) -> str | None:
+    """Single shared city (else province) among results — an honest list header when
+    the search matched nothing. None if they don't share one → widget shows "Hotels"."""
+    for key in ("city_name", "province_name"):
+        vals = {h.get(key) for h in hotels if h.get(key)}
+        if len(vals) == 1:
+            return next(iter(vals))
+    return None
+
+
 def _list_item(h: dict) -> dict:
     """Map a /hotels item to the hotel-list card shape (the API now ships cover, rating,
     city/province and starting_price directly — no per-hotel enrichment needed)."""
@@ -345,10 +355,12 @@ async def search_hotels(location: str, check_in_date: str = "", check_out_date: 
     def _hit(h, keys):
         hay = " ".join((h.get(k) or "").lower() for k in keys)
         return any(t in hay for t in tokens)
-    matches = ([h for h in hotels if _hit(h, ("city_name", "province_name"))]
-               or [h for h in hotels if _hit(h, ("hotel_name", "hotel_id"))]
-               or hotels)
-    query: dict[str, Any] = {"location": location}
+    matched = ([h for h in hotels if _hit(h, ("city_name", "province_name"))]
+               or [h for h in hotels if _hit(h, ("hotel_name", "hotel_id"))])
+    matches = matched or hotels
+    # nothing matched → showing all; label the header by where the hotels actually are,
+    # not the typed location (e.g. "Bandung" search on a Bali-only tenant).
+    query: dict[str, Any] = {"location": location if matched else _common_area(matches)}
     try:
         ci, co = _stay_dates(check_in_date, check_out_date)
         query.update(check_in=ci.isoformat(), check_out=co.isoformat(), guests=guests)
