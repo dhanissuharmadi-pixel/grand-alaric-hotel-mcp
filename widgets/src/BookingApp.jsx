@@ -407,8 +407,10 @@ export function BookingApp() {
       style={{ colorScheme: theme === "dark" ? "dark" : "light" }}
     >
       {/* one stable footprint across views: short screens (spinner, payment card)
-          center inside the same min-height instead of collapsing the widget */}
-      <div className="antialiased flex min-h-[420px] w-full flex-col justify-center">{body}</div>
+          center inside the same min-height instead of collapsing the widget.
+          max-w caps the content on wide canvases (else cards stretch huge); the
+          background above stays full-width so there's no side gutter. */}
+      <div className="antialiased mx-auto flex min-h-[420px] w-full max-w-[900px] flex-col justify-center">{body}</div>
     </div>
   );
 }
