@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+import asyncio
 import html
 import httpx
 import json
@@ -44,9 +45,9 @@ CURRENCY = os.getenv("CURRENCY", "IDR")
 LOCALE = os.getenv("LOCALE", "id-ID")
 _MONEY = {"currency": CURRENCY, "locale": LOCALE}
 
-# Multi-tenant: serve several backends from one process, picked by URL path prefix
-# (e.g. /vie/mcp). TENANTS="vie=https://…/vie,ga=https://…/webapi/chatgpt". Empty = single
-# tenant (API_BASE_URL). _current_base is set per request by the tenant router below.
+# Multi-tenant MERGE: one MCP URL shows hotels from several backends. search_hotels fans
+# out to all of these; each hotel_id is tagged 'slug:id' so per-hotel calls route back.
+# TENANTS="vie=https://…/vie,ga=https://…/webapi/chatgpt". Empty = single tenant (API_BASE_URL).
 TENANTS = {p.split("=", 1)[0].strip(): p.split("=", 1)[1].strip()
            for p in os.getenv("TENANTS", "").split(",") if "=" in p}
 _current_base = ContextVar("api_base", default=API_BASE_URL)
@@ -138,6 +139,26 @@ def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
 
 
+async def _all_hotels() -> list[dict] | None:
+    """/hotels from every tenant (ids tagged 'slug:id' so hotel calls route back), or the
+    single default backend. None only if nothing loaded at all."""
+    async def one(slug: str, base: str | None):
+        if base:
+            _current_base.set(base)  # isolated per gathered task's context copy
+        try:
+            d = json.loads(await _api("GET", "/hotels"))
+        except json.JSONDecodeError:
+            return None
+        hs = d.get("hotels") or [] if isinstance(d, dict) else []
+        return [({**h, "hotel_id": f"{slug}:{h['hotel_id']}"} if slug else h)
+                for h in hs if h.get("hotel_id")]
+
+    parts = TENANTS.items() if TENANTS else [("", None)]
+    results = await asyncio.gather(*[one(s, b) for s, b in parts])
+    loaded = [r for r in results if r is not None]
+    return [h for lst in loaded for h in lst] if loaded else None
+
+
 def _common_area(hotels: list[dict]) -> str | None:
     """Single shared city (else province) among results — an honest list header when
     the search matched nothing. None if they don't share one → widget shows "Hotels"."""
@@ -217,6 +238,17 @@ _http = httpx.AsyncClient(
     timeout=httpx.Timeout(20.0, connect=10.0),
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
 )
+
+
+def _route(hotel_id: str) -> str:
+    """Multi-tenant merge: hotel_id from search is tagged 'slug:realid'. Point _api at
+    that tenant's backend and return the real id. Untagged (single-tenant) → unchanged.
+    Booking path depends on this — see test_routing.py."""
+    slug, sep, real = str(hotel_id).partition(":")
+    if sep and slug in TENANTS:
+        _current_base.set(TENANTS[slug])
+        return real
+    return hotel_id
 
 
 async def _api(method: str, path: str, json_body: dict | None = None) -> str:
@@ -340,18 +372,13 @@ async def search_hotels(location: str, check_in_date: str = "", check_out_date: 
         guests: Number of guests when the user states it.
     """
     logger.info("search_hotels location=%r dates=%s→%s", location, check_in_date, check_out_date)
-    raw = await _api("GET", "/hotels")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"error": raw}
-    if isinstance(data, dict) and data.get("error"):
-        return {"error": data["error"], "hotels": [], "query": {"location": location}}
+    hotels = await _all_hotels()
+    if hotels is None:
+        return {"error": "Couldn't load hotels.", "hotels": [], "query": {"location": location}}
     # Token match, city/province FIRST: a hotel can be named "... Bandung" while its
     # city is Jakarta, so name matches only count when no city matches the query.
     # Zero matches anywhere → show all rather than nothing.
     tokens = [t for t in re.split(r"[^a-z0-9]+", location.lower()) if len(t) >= 3 and t != "hotel"]
-    hotels = data.get("hotels", []) if isinstance(data, dict) else []
     def _hit(h, keys):
         hay = " ".join((h.get(k) or "").lower() for k in keys)
         return any(t in hay for t in tokens)
@@ -389,7 +416,8 @@ async def get_hotel_details(hotel_id: str) -> dict[str, Any]:
         hotel_id: Property ID from search_hotels (e.g. 'GSV').
     """
     logger.info("get_hotel_details hotel_id=%r", hotel_id)
-    info_raw = await _api("POST", "/hotel/info", {"id": hotel_id.lower()})
+    hid = _route(hotel_id)
+    info_raw = await _api("POST", "/hotel/info", {"id": hid.lower()})
     try:
         info = json.loads(info_raw)
     except json.JSONDecodeError:
@@ -397,7 +425,8 @@ async def get_hotel_details(hotel_id: str) -> dict[str, Any]:
     detail = info.get("hotel") if isinstance(info, dict) else None
     if not isinstance(detail, dict):
         return {"error": "Hotel not found."}
-    return {"hotel": _normalize_hotel({"hotel_id": hotel_id.upper()}, detail), **_MONEY}
+    # keep the tagged hotel_id so the widget's next call routes to the same tenant
+    return {"hotel": _normalize_hotel({"hotel_id": hotel_id}, detail), **_MONEY}
 
 
 @mcp.tool(
@@ -430,8 +459,9 @@ async def check_availability(
     except ValueError as exc:
         return {"error": str(exc)}
 
+    hid = _route(hotel_id)
     logger.info("check_availability hotel=%s %s→%s guests=%d", hotel_id, check_in_date, check_out_date, guests)
-    raw = await _api("POST", "/rooms", _stay_body(hotel_id, check_in, check_out, guests))
+    raw = await _api("POST", "/rooms", _stay_body(hid, check_in, check_out, guests))
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -456,7 +486,8 @@ async def check_availability(
             "original_price": rt.get("original_price"),
         } for rt in room.get("rates", [])],
     } for room in data.get("rooms", []) if room.get("rates")]
-    result["extras"] = (await _enhancements(hotel_id, check_in, check_out, guests)) if EXTRAS_ENABLED else []
+    result["extras"] = (await _enhancements(hid, check_in, check_out, guests)) if EXTRAS_ENABLED else []
+    # query keeps the TAGGED hotel_id so create_order routes to the right tenant
     result["query"] = {"hotel_id": hotel_id, "check_in": check_in.isoformat(),
                        "check_out": check_out.isoformat(), "guests": guests}
     result.update(_MONEY)
@@ -484,6 +515,7 @@ async def check_packages(
     except ValueError as exc:
         return _err(str(exc))
 
+    hotel_id = _route(hotel_id)
     logger.info("check_packages hotel=%s %s→%s", hotel_id, check_in_date, check_out_date)
     return await _api("POST", "/package", _stay_body(hotel_id, check_in, check_out, guests))
 
@@ -511,6 +543,7 @@ async def check_room_packages(
     except ValueError as exc:
         return _err(str(exc))
 
+    hotel_id = _route(hotel_id)
     logger.info("check_room_packages hotel=%s package=%s", hotel_id, package_code)
     return await _api("POST", "/room-packages",
                       _stay_body(hotel_id, check_in, check_out, guests, package_code=package_code))
@@ -637,7 +670,8 @@ async def create_order(
     if cart_extras:
         cart["enhance_stay"] = cart_extras
 
-    order = _stay_body(hotel_id, check_in, check_out, guests, cart=cart, promocode=promocode,
+    hid = _route(hotel_id)  # route the booking to the tenant this hotel belongs to
+    order = _stay_body(hid, check_in, check_out, guests, cart=cart, promocode=promocode,
                        guest={"salutation": salutation, "nation_code": nation_code,
                               "name": guest_name, "phone": guest_phone, "email": guest_email})
     logger.info("create_order hotel=%s rooms=%s extras=%d", hotel_id, cart_rooms, len(cart_extras))
@@ -678,26 +712,6 @@ if __name__ == "__main__":
     mcp.settings.port = int(os.getenv("PORT", "8000"))
     logger.info("Starting %s MCP — transport=%s host=%s port=%d", HOTEL_NAME, transport, mcp.settings.host, mcp.settings.port)
     _check_config(transport, mcp.settings.host)
-    if TENANTS and transport == "streamable-http":
-        import uvicorn
-        app = mcp.streamable_http_app()  # its lifespan runs the session manager
-
-        async def tenant_router(scope, receive, send):
-            # /<slug>/mcp → set that tenant's base URL and forward as /mcp.
-            if scope["type"] == "http":
-                seg = scope["path"].lstrip("/").split("/", 1)
-                if seg[0] in TENANTS:
-                    token = _current_base.set(TENANTS[seg[0]])
-                    rest = "/" + (seg[1] if len(seg) > 1 else "")
-                    scope = {**scope, "path": rest, "raw_path": rest.encode()}
-                    try:
-                        await app(scope, receive, send)
-                    finally:
-                        _current_base.reset(token)
-                    return
-            await app(scope, receive, send)  # lifespan/websocket/non-tenant paths
-
-        logger.info("Multi-tenant endpoints: %s", ", ".join(f"/{s}/mcp" for s in TENANTS))
-        uvicorn.run(tenant_router, host=mcp.settings.host, port=mcp.settings.port)
-    else:
-        mcp.run(transport=transport)
+    if TENANTS:
+        logger.info("Multi-tenant merge over: %s", ", ".join(TENANTS))
+    mcp.run(transport=transport)

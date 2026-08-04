@@ -15,7 +15,7 @@ deploy `main` as-is.
 ```bash
 uv sync
 MCP_TRANSPORT=streamable-http HOST=0.0.0.0 PORT=8000 .venv/bin/python server.py
-# MCP endpoint: https://<your-domain>/mcp   (or /<slug>/mcp per tenant if TENANTS is set)
+# MCP endpoint: https://<your-domain>/mcp   (one URL; TENANTS merges backends into it)
 ```
 On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from env.
 
@@ -27,7 +27,7 @@ On a PaaS, bind to the platform's `$PORT`. The server reads `HOST`/`PORT` from e
 | `HOST` / `PORT` | yes (hosted) | `0.0.0.0` / platform port |
 | `MCP_ALLOWED_HOSTS` | **yes (public)** | the public host(s), e.g. `mcp.example.com`. The SDK blocks unknown `Host` headers (DNS-rebinding protection); set this to your domain, or `*` to disable the check behind a trusted proxy. |
 | `API_BASE_URL` | no | defaults to the live PHM endpoint; override to point at one tenant. |
-| `TENANTS` | no | serve several backends from ONE process, picked by URL path prefix. `slug=base_url,slug=base_url` → endpoints `/<slug>/mcp`. Empty = single tenant (`API_BASE_URL`). |
+| `TENANTS` | no | ONE MCP URL that merges hotels from several backends. `slug=base_url,slug=base_url`; search fans out to all, each hotel routes back to its backend for details/booking. Empty = single tenant (`API_BASE_URL`). All tenants must share `CURRENCY`. |
 | `CURRENCY` / `LOCALE` | no | widget money formatting; default `IDR` / `id-ID`. |
 | `EXTRAS_ENABLED` | no | default `true` — add-on extras ("enhance your stay") show and book end-to-end. Set `false` to hide extras if the backend ever regresses. |
 
